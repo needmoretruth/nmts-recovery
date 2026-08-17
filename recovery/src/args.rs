@@ -34,6 +34,8 @@ pub enum Mode {
     Gui,
     /// Write the GUI page out as a file and stop. Nothing else happens.
     WriteGui,
+    /// Print what the account code derives — no map, no network, nothing written.
+    Derive,
 }
 
 /// Message language. English unless `--lang ko` says otherwise.
@@ -70,6 +72,10 @@ pub struct Args {
     pub no_open: bool,
     /// Where [`Mode::WriteGui`] puts the page.
     pub gui_out: Option<PathBuf>,
+    /// How many wallets [`Mode::Derive`] walks.
+    pub wallets: u32,
+    /// Whether [`Mode::Derive`] also prints private keys.
+    pub secrets: bool,
 }
 
 /// Parsing outcome: either arguments, or text to print and an exit code.
@@ -78,20 +84,33 @@ pub enum Parsed {
     Print(String, i32),
 }
 
+/// Wallets walked by `--derive` when the caller names no number.
+///
+/// NMTS gives an account one wallet unless the person asked for more, so one is the answer for
+/// almost everybody; `--wallets` is there for the rest.
+const DEFAULT_WALLETS: u32 = 1;
+
+/// A ceiling on `--wallets`. Each one costs a key derivation, and a number past this is a typo
+/// rather than a request.
+const MAX_WALLETS: u32 = 100;
+
 const USAGE: &str = "\
 nmts-recovery — restore files uploaded with NMTS, without NMTS.
 
 USAGE
   nmts-recovery --map FILE --out DIR      restore, in the terminal
   nmts-recovery --gui                     restore, from a page in your browser
-  nmts-recovery --map FILE --list         show what a map covers and stop
+  nmts-recovery --map FILE --list         show what a list covers and stop
+  nmts-recovery --derive                  show what your account code derives
 
 WHAT IT NEEDS
   Your account code, and the recovery map file you saved from NMTS. The map is
   encrypted; the code opens it. Neither is ever sent anywhere.
 
 OPTIONS
-  --map FILE           the .nmtsmap file you saved. Required unless --gui.
+  --map FILE           the recovery list (.nmtsmap) you saved, OR a recovery kit
+                       (.txt), which has the list inside it. Required unless --gui
+                       or --derive.
   --out DIR            where to write recovered files. Required when restoring.
   --code-file FILE     read the account code from a file instead of typing it.
   --aggregator URL     a Walrus aggregator to read from. Repeatable; tried in order.
@@ -108,6 +127,12 @@ OPTIONS
   --no-open            with --gui, print the address instead of opening a browser.
   --write-gui FILE     write the control page out as a file and stop, so you can
                        read it. Opening that file on its own does nothing.
+  --derive             print what your account code derives — the account id, its
+                       fingerprint, your public code, and your wallet addresses.
+                       No map, no network, nothing written.
+  --wallets N          how many wallets --derive walks. Default: 1.
+  --secrets            with --derive, also print the wallet private keys. Anyone
+                       who reads them can spend from those wallets.
   --lang en|ko         message language. Default: en.
   --help               this text.
   --version            version and license.
@@ -132,6 +157,8 @@ pub fn parse(argv: &[String]) -> Parsed {
         port: None,
         no_open: false,
         gui_out: None,
+        wallets: DEFAULT_WALLETS,
+        secrets: false,
     };
     let mut map_seen = false;
 
@@ -166,6 +193,14 @@ pub fn parse(argv: &[String]) -> Parsed {
             }
             "--gui" => {
                 a.mode = Mode::Gui;
+                1
+            }
+            "--derive" => {
+                a.mode = Mode::Derive;
+                1
+            }
+            "--secrets" => {
+                a.secrets = true;
                 1
             }
             "--overwrite" => {
@@ -227,6 +262,21 @@ pub fn parse(argv: &[String]) -> Parsed {
                 }
                 Err(e) => return Parsed::Print(e, 2),
             },
+            "--wallets" => match value("--wallets") {
+                Ok(v) => match v.parse::<u32>() {
+                    Ok(n) if (1..=MAX_WALLETS).contains(&n) => {
+                        a.wallets = n;
+                        2
+                    }
+                    _ => {
+                        return Parsed::Print(
+                            format!("--wallets takes a number from 1 to {MAX_WALLETS}."),
+                            2,
+                        )
+                    }
+                },
+                Err(e) => return Parsed::Print(e, 2),
+            },
             "--port" => match value("--port") {
                 Ok(v) => match v.parse::<u16>() {
                     // Port 0 means "any free port" to the operating system, which is the default
@@ -269,8 +319,9 @@ pub fn parse(argv: &[String]) -> Parsed {
         i += taken;
     }
 
-    // The GUI picks its map in the browser, and writing the page out reads no map at all.
-    let map_optional = matches!(a.mode, Mode::Gui | Mode::WriteGui);
+    // The GUI picks its list in the browser, writing the page out reads nothing, and deriving
+    // needs only the account code.
+    let map_optional = matches!(a.mode, Mode::Gui | Mode::WriteGui | Mode::Derive);
     if !map_seen && !map_optional {
         return Parsed::Print(format!("--map is required.\n\n{USAGE}"), 2);
     }
@@ -365,6 +416,36 @@ mod tests {
         ])) {
             Parsed::Run(a) => {
                 assert_eq!(a.aggregators, vec!["https://a.example", "https://b.example"]);
+            }
+            _ => panic!("did not parse"),
+        }
+    }
+
+    /// Deriving needs the account code and nothing else — no list, no network, no destination.
+    #[test]
+    fn deriving_needs_no_map_and_no_destination() {
+        match parse(&v(&["--derive"])) {
+            Parsed::Run(a) => {
+                assert_eq!(a.mode, Mode::Derive);
+                assert_eq!(a.wallets, 1);
+                assert!(!a.secrets, "private keys are not the default");
+            }
+            Parsed::Print(msg, _) => panic!("--derive was refused: {msg}"),
+        }
+    }
+
+    #[test]
+    fn a_wallet_count_that_is_not_one_is_refused() {
+        for bad in ["0", "no", "1000"] {
+            assert!(
+                matches!(parse(&v(&["--derive", "--wallets", bad])), Parsed::Print(_, 2)),
+                "--wallets {bad} was accepted"
+            );
+        }
+        match parse(&v(&["--derive", "--wallets", "5", "--secrets"])) {
+            Parsed::Run(a) => {
+                assert_eq!(a.wallets, 5);
+                assert!(a.secrets);
             }
             _ => panic!("did not parse"),
         }

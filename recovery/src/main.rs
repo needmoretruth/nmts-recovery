@@ -30,7 +30,9 @@
 #![forbid(unsafe_code)]
 
 mod args;
+mod derive;
 mod gui;
+mod kitfile;
 mod mapfile;
 mod msg;
 mod restore;
@@ -63,6 +65,7 @@ fn main() -> ExitCode {
     let outcome = match a.mode {
         Mode::Gui => gui::run(&a),
         Mode::WriteGui => write_gui(&a),
+        Mode::Derive => show_derived(&a),
         _ => run(&a),
     };
     match outcome {
@@ -82,25 +85,66 @@ fn write_gui(a: &args::Args) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// Print everything an account code turns into. No list, no network, nothing written.
+fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
+    let lang = a.lang;
+    let code = read_account_code(a.code_file.as_deref(), lang)?;
+    let keys = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
+    let d = derive::from_keys(&keys, a.wallets, a.secrets);
+
+    println!("\n{}", msg::DERIVE_HEAD.get(lang));
+    println!("  {:<16} {}", msg::DERIVE_ACCOUNT_ID.get(lang), d.account_id);
+    println!("  {:<16} {}", msg::DERIVE_FINGERPRINT.get(lang), d.fingerprint);
+    println!("  {:<16} {}", msg::DERIVE_PUBLIC_CODE.get(lang), d.public_code);
+    for w in &d.wallets {
+        println!(
+            "  {:<16} {}",
+            format!("{} {}", msg::DERIVE_WALLET.get(lang), w.index),
+            w.address
+        );
+    }
+    if a.secrets {
+        // ⛔ The warning comes BEFORE the keys, not after. A person scrolling back to read a
+        //    caution that was printed underneath the thing it cautions about has already read it.
+        println!("\n{}", msg::DERIVE_SECRET_WARNING.get(lang));
+        for w in &d.wallets {
+            if let Some(secret) = &w.secret {
+                println!(
+                    "  {:<16} {}",
+                    format!("{} {} {}", msg::DERIVE_WALLET.get(lang), w.index, msg::DERIVE_SECRET_KEY.get(lang)),
+                    secret
+                );
+            }
+        }
+    } else {
+        println!("\n{}", msg::DERIVE_PUBLIC_ONLY.get(lang));
+    }
+    println!("{}", msg::DERIVE_NOTHING_ELSE.get(lang));
+    Ok(ExitCode::SUCCESS)
+}
+
 fn run(a: &args::Args) -> Result<ExitCode, String> {
     let lang = a.lang;
     let raw = std::fs::read_to_string(&a.map).map_err(|e| format!("{}: {e}", a.map.display()))?;
-    let wrapper = match mapfile::parse(&raw) {
-        Ok(w) => w,
-        Err(mapfile::MapFileError::NotAMap(why)) => {
-            return Err(format!("{} — {why}.", msg::MAP_NOT_A_MAP.get(lang)))
-        }
-        Err(mapfile::MapFileError::TooNew { wrapper, nrm }) => {
-            return Err(format!(
-                "{} (wrapper v{wrapper}, NRM v{nrm}; this build reads up to v{} / v{}).",
-                msg::MAP_TOO_NEW.get(lang),
-                mapfile::MAX_WRAPPER_VERSION,
-                mapfile::MAX_NRM_VERSION
-            ))
-        }
+    // A recovery kit has the list inside it, so either file gets a person to the same place.
+    let (wrapper, code_in_kit) = if kitfile::looks_like_kit(&raw) {
+        open_kit(&raw, lang)?
+    } else {
+        (parse_list(&raw, lang)?, None)
     };
 
-    let code = read_account_code(a.code_file.as_deref(), lang)?;
+    // ⛔ A kit that carries the code is used WITHOUT asking, and the program says so. Asking a
+    //    person to type a code that is printed in the file they just handed over would protect
+    //    nothing — whoever has the file has the code — while teaching them the question means
+    //    something. `--code-file` still wins, for anyone keeping the two apart deliberately.
+    let code = match (a.code_file.as_deref(), code_in_kit) {
+        (Some(path), _) => read_account_code(Some(path), lang)?,
+        (None, Some(from_kit)) => {
+            println!("{}", msg::KIT_CARRIES_CODE.get(lang));
+            parse_account_code(&from_kit, lang)?
+        }
+        (None, None) => read_account_code(None, lang)?,
+    };
     let keys = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
 
     // ⛔ THE ACCOUNT IS CHECKED BEFORE THE MAP IS OPENED, and the order is the point. Both a wrong
@@ -155,6 +199,56 @@ fn run(a: &args::Args) -> Result<ExitCode, String> {
             do_restore(&planned, a, lang)
         }
     }
+}
+
+/// Read a `.nmtsmap` document, turning its refusals into sentences.
+fn parse_list(raw: &str, lang: Lang) -> Result<mapfile::MapFile, String> {
+    match mapfile::parse(raw) {
+        Ok(w) => Ok(w),
+        Err(mapfile::MapFileError::NotAMap(why)) => {
+            Err(format!("{} — {why}.", msg::MAP_NOT_A_MAP.get(lang)))
+        }
+        Err(mapfile::MapFileError::TooNew { wrapper, nrm }) => Err(format!(
+            "{} (wrapper v{wrapper}, NRM v{nrm}; this build reads up to v{} / v{}).",
+            msg::MAP_TOO_NEW.get(lang),
+            mapfile::MAX_WRAPPER_VERSION,
+            mapfile::MAX_NRM_VERSION
+        )),
+    }
+}
+
+/// Open a recovery kit and take the list — and the account code — out of it.
+fn open_kit(raw: &str, lang: Lang) -> Result<(mapfile::MapFile, Option<String>), String> {
+    let kit = match kitfile::parse(raw) {
+        Ok(k) => k,
+        Err(kitfile::KitFileError::NotAKit(why)) => {
+            return Err(format!("{} — {why}.", msg::KIT_DAMAGED.get(lang)))
+        }
+        Err(kitfile::KitFileError::TooNew { version }) => {
+            return Err(format!(
+                "{} (kit v{version}; this build reads up to v{}).",
+                msg::KIT_TOO_NEW.get(lang),
+                kitfile::MAX_KIT_VERSION
+            ))
+        }
+    };
+    println!("{}", msg::KIT_OPENED.get(lang));
+    let list = kit
+        .recovery_list
+        .ok_or_else(|| msg::KIT_NO_LIST.get(lang).to_string())?;
+    let wrapper = parse_list(&list.to_string(), lang)?;
+    // ⛔ The kit says which account it is for, and so does the list sealed inside it. They come
+    //    from the same moment, so they agree — unless somebody assembled this file by hand, in
+    //    which case a person should hear it before their account code goes anywhere near it.
+    if kit.account_id != wrapper.account_id {
+        return Err(format!(
+            "{} — the kit is for account {} and the list inside it is for {}.",
+            msg::KIT_DAMAGED.get(lang),
+            kit.account_id,
+            wrapper.account_id
+        ));
+    }
+    Ok((wrapper, kit.account_code))
 }
 
 /// What the map covers. Printed in every mode, because a person should see what they are about to
@@ -281,6 +375,11 @@ pub(crate) fn read_account_code(
         }
         None => prompt_for_code(lang)?,
     };
+    parse_account_code(&raw, lang)
+}
+
+/// Turn text into an account code, whatever it was read from.
+pub(crate) fn parse_account_code(raw: &str, lang: Lang) -> Result<AccountCode, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err(msg::CODE_EMPTY.get(lang).to_string());

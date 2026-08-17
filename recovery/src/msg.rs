@@ -193,6 +193,68 @@ pub const GUI_PAGE_WRITTEN: Line = Line(
      --gui 로 실행하고 거기 찍히는 주소를 여십시오.",
 );
 
+// ── The recovery kit, and what a code derives ────────────────────────────────────────────────
+
+pub const KIT_OPENED: Line = Line(
+    "This is a recovery kit, and the recovery list is inside it.",
+    "복구 키트입니다. 복구 목록이 그 안에 들어 있습니다.",
+);
+
+pub const KIT_CARRIES_CODE: Line = Line(
+    "⚠ This kit carries your account code in the clear, so this program is not asking for it. \
+     Anyone who reads this file can do exactly what you are about to do.",
+    "⚠ 이 키트에는 계정 코드가 그대로 들어 있어서 따로 묻지 않습니다. 이 파일을 읽을 수 있는 \
+     사람은 지금 하시려는 일을 똑같이 할 수 있습니다.",
+);
+
+pub const KIT_NO_LIST: Line = Line(
+    "This recovery kit has no recovery list inside it — it was taken before there were any files, \
+     or by an older version of NMTS. Use the recovery list file instead.",
+    "이 복구 키트 안에는 복구 목록이 없습니다. 파일이 하나도 없을 때 받았거나, 예전 판의 \
+     NMTS에서 받은 것입니다. 복구 목록 파일을 쓰십시오.",
+);
+
+pub const KIT_DAMAGED: Line = Line(
+    "This looks like a recovery kit, but the part a program reads is not readable.",
+    "복구 키트로 보이는데, 프로그램이 읽는 부분을 읽을 수 없습니다.",
+);
+
+pub const KIT_TOO_NEW: Line = Line(
+    "This recovery kit was written in a newer format than this build understands. Use a newer \
+     nmts-recovery; nothing was read.",
+    "이 복구 키트는 이 판이 아는 것보다 새로운 형식으로 쓰였습니다. 더 새로운 nmts-recovery를 \
+     쓰십시오. 아무것도 읽지 않았습니다.",
+);
+
+pub const DERIVE_HEAD: Line = Line(
+    "What this account code derives:",
+    "이 계정 코드에서 나오는 것:",
+);
+
+pub const DERIVE_ACCOUNT_ID: Line = Line("Account id", "계정 식별자");
+pub const DERIVE_FINGERPRINT: Line = Line("Fingerprint", "지문");
+pub const DERIVE_PUBLIC_CODE: Line = Line("Public code", "공개 코드");
+pub const DERIVE_WALLET: Line = Line("Wallet", "지갑");
+pub const DERIVE_SECRET_KEY: Line = Line("Private key", "개인 키");
+
+pub const DERIVE_PUBLIC_ONLY: Line = Line(
+    "These are public. Add --secrets to also print the wallet private keys.",
+    "여기까지는 공개해도 되는 값입니다. 지갑의 개인 키까지 보시려면 --secrets 를 붙이십시오.",
+);
+
+pub const DERIVE_SECRET_WARNING: Line = Line(
+    "⛔ PRIVATE KEYS FOLLOW. Anyone who reads them can spend everything in those wallets. They are \
+     about to be in this terminal's history — close it when you are done, and do not paste this \
+     anywhere.",
+    "⛔ 아래는 개인 키입니다. 이것을 읽는 사람은 그 지갑의 돈을 전부 쓸 수 있습니다. 지금부터 이 \
+     창의 기록에 남으니, 끝나면 창을 닫으시고 어디에도 붙여 넣지 마십시오.",
+);
+
+pub const DERIVE_NOTHING_ELSE: Line = Line(
+    "Nothing was written and nothing was sent. This is the same derivation your browser does.",
+    "아무것도 저장하지 않았고 어디로도 보내지 않았습니다. 브라우저가 하는 것과 같은 계산입니다.",
+);
+
 /// Every line above, in one place.
 ///
 /// ⛔ This exists so the both-languages check below has something to iterate. A list maintained by
@@ -230,6 +292,20 @@ pub const ALL_LINES: &[Line] = &[
     GUI_NEED_SELECTION,
     GUI_ALREADY_RUNNING,
     GUI_PAGE_WRITTEN,
+    KIT_OPENED,
+    KIT_CARRIES_CODE,
+    KIT_NO_LIST,
+    KIT_DAMAGED,
+    KIT_TOO_NEW,
+    DERIVE_HEAD,
+    DERIVE_ACCOUNT_ID,
+    DERIVE_FINGERPRINT,
+    DERIVE_PUBLIC_CODE,
+    DERIVE_WALLET,
+    DERIVE_SECRET_KEY,
+    DERIVE_PUBLIC_ONLY,
+    DERIVE_SECRET_WARNING,
+    DERIVE_NOTHING_ELSE,
 ];
 
 /// `n bytes` in a form a person reads. Deliberately plain: no locale-specific grouping, because

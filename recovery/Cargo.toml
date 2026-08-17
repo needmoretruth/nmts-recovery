@@ -52,6 +52,20 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 #   one thing is the honest way to keep that promise everywhere.
 rpassword = "7"
 
+# ── Turning a wallet seed into what a wallet app understands ─────────────────────────────────
+#
+# ⛔ These three are here because an account code derives a WALLET as well as file keys, and a
+#   person recovering from a dead service needs both. The engine crate stops at the 32-byte seed
+#   (that is where the frozen format stops); an address and an importable key are Sui's rules, not
+#   ours, and are applied here.
+#
+# ⚠ Every one of them is checked against values produced by the library the product itself uses —
+#   see the fixtures in `src/derive.rs`. A mismatch here would hand somebody the wrong address to
+#   fund, or a key that is not theirs, and nothing else in this program would notice.
+ed25519-dalek = { version = "2", default-features = false }
+blake2 = { version = "0.10", default-features = false }
+bech32 = { version = "0.11", default-features = false, features = ["alloc"] }
+
 [dev-dependencies]
 # The offline end-to-end test builds a synthetic account and serves blobs from a directory, so the
 # whole restore path is exercised with no network at all.

@@ -294,3 +294,103 @@ fn an_escaped_folder_name_stays_one_folder() {
     assert_eq!(restored(&fx, "a／b/x.txt"), b"one folder");
     assert!(!Path::new(&fx.path("out/a/b")).exists(), "it split into two folders");
 }
+
+
+// --- the recovery kit: one file with everything in it -------------------------------------------
+
+/// ⭐ The kit is the shape the product hands people when they want one file rather than two: the
+///    account code and the recovery list together. This program has to accept it, take the list out
+///    of it, and NOT ask for a code that is printed in the file it was just given.
+#[test]
+fn a_recovery_kit_alone_gives_the_files_back() {
+    let fx = Fixture::new();
+    let text = b"one file, everything in it".to_vec();
+    let item = fx.add_file("kit.txt.restored", "/docs", &text, 1, false);
+    fx.write_map(vec![item]);
+    fx.write_kit();
+
+    // ⛔ No --code-file. The kit carries the code, and the whole point is that it is enough.
+    let out = Command::new(env!("CARGO_BIN_EXE_nmts-recovery"))
+        .args(["--map", fx.path("kit.txt").to_str().expect("utf8")])
+        .args(["--out", fx.path("out").to_str().expect("utf8")])
+        .args(["--blobs-dir", fx.path("blobs").to_str().expect("utf8")])
+        .args(["--lang", "en"])
+        .output()
+        .expect("run");
+    let said = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(said.contains("recovery list is inside it"), "{said}");
+    // ⛔ And it says so out loud. Using a code without asking is right here; doing it quietly is not.
+    assert!(said.contains("carries your account code in the clear"), "{said}");
+    assert_eq!(restored(&fx, "docs/kit.txt.restored"), text);
+}
+
+/// A kit for one account holding a list for another was assembled by hand. Say so before the
+/// account code goes anywhere near it.
+#[test]
+fn a_kit_and_a_list_that_disagree_about_the_account_are_refused() {
+    let fx = Fixture::new();
+    let item = fx.add_file("a.txt", "/", b"x", 1, false);
+    fx.write_map(vec![item]);
+    fx.write_kit();
+
+    let kit = fs::read_to_string(fx.path("kit.txt")).expect("kit");
+    let keys = nmts_crypto::kdf::derive(&fx.code).expect("derive");
+    let swapped = kit.replacen(
+        &format!("\"account_id\":\"{}\"", keys.account_id_b64()),
+        "\"account_id\":\"AAAAAAAAAAAAAAAAAAAAAA\"",
+        1,
+    );
+    fs::write(fx.path("kit.txt"), swapped).expect("write");
+
+    let out = Command::new(env!("CARGO_BIN_EXE_nmts-recovery"))
+        .args(["--map", fx.path("kit.txt").to_str().expect("utf8")])
+        .args(["--out", fx.path("out").to_str().expect("utf8")])
+        .args(["--blobs-dir", fx.path("blobs").to_str().expect("utf8")])
+        .args(["--lang", "en"])
+        .output()
+        .expect("run");
+    assert!(!out.status.success(), "a mismatched kit was accepted");
+    let said = String::from_utf8_lossy(&out.stderr).to_string();
+    assert!(said.contains("the kit is for account"), "{said}");
+}
+
+/// `--derive` needs no list at all — it is the answer to "what does this code give me".
+#[test]
+fn deriving_from_a_code_alone_prints_the_public_values_and_no_secrets() {
+    let fx = Fixture::new();
+    let out = Command::new(env!("CARGO_BIN_EXE_nmts-recovery"))
+        .args(["--derive", "--code-file", fx.path("code.txt").to_str().expect("utf8")])
+        .args(["--lang", "en"])
+        .output()
+        .expect("run");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout).to_string();
+
+    let keys = nmts_crypto::kdf::derive(&fx.code).expect("derive");
+    assert!(said.contains(&keys.account_id_b64()), "{said}");
+    assert!(said.contains("Public code"), "{said}");
+    assert!(said.contains("0x"), "no wallet address: {said}");
+    // ⛔ Not by default. Somebody checking an account id must not get a spendable key for free.
+    assert!(!said.contains("suiprivkey"), "a private key was printed unasked: {said}");
+    assert!(said.contains("--secrets"), "it does not say how to ask for them: {said}");
+}
+
+/// And with `--secrets`, the warning comes BEFORE the keys.
+#[test]
+fn asking_for_secrets_prints_them_after_the_warning_about_them() {
+    let fx = Fixture::new();
+    let out = Command::new(env!("CARGO_BIN_EXE_nmts-recovery"))
+        .args(["--derive", "--secrets", "--wallets", "2"])
+        .args(["--code-file", fx.path("code.txt").to_str().expect("utf8")])
+        .args(["--lang", "en"])
+        .output()
+        .expect("run");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert_eq!(said.matches("suiprivkey").count(), 2, "two wallets, two keys: {said}");
+    let warning = said.find("PRIVATE KEYS FOLLOW").expect("no warning");
+    let first_key = said.find("suiprivkey").expect("no key");
+    assert!(warning < first_key, "the warning came after the keys");
+}
