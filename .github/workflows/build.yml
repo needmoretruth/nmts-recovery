@@ -1,0 +1,44 @@
+# Builds and tests on all three desktop platforms, on every push to main.
+#
+# WHY THIS EXISTS: this program's whole claim is that you can get your files back with it, on
+# whatever machine you end up holding. "It builds and its tests pass on Linux, macOS and Windows"
+# is worth more when GitHub says it than when the README does — and the tests are not smoke tests:
+# they synthesise a real account, encrypt real files with the real engine, and restore them.
+#
+# ⛔ IT REACTS TO `push` ONLY — never to `pull_request`. A workflow that runs on pull requests
+#    executes code an outsider wrote, inside this repository. There is nothing here worth stealing
+#    (no secrets are used, and none should ever be added), but a job a stranger can start is a door
+#    with no reason to exist. Pull requests are not accepted here anyway.
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      # Every platform reports for itself. One failing does not hide the other two, and which ones
+      # failed is the whole diagnostic.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tests
+        working-directory: recovery
+        run: cargo test --verbose
+
+      - name: Release build
+        working-directory: recovery
+        run: cargo build --release --verbose
+
+      - name: It runs
+        working-directory: recovery
+        run: cargo run --release -- --version

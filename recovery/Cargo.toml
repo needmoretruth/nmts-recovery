@@ -1,0 +1,58 @@
+[package]
+name = "nmts-recovery"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Recover files uploaded with NMTS using only an account code, a recovery map, and a public Walrus aggregator. No NMTS server is contacted."
+license = "AGPL-3.0-only"
+publish = false
+
+[[bin]]
+name = "nmts-recovery"
+path = "src/main.rs"
+
+[dependencies]
+# The NCF-3 engine. Path dependency here; in the published repository the two crates sit side by
+# side in one workspace, so a stranger who clones it gets a build with nothing else to fetch.
+#
+# ⛔ THIS TOOL ADDS NO CRYPTOGRAPHY OF ITS OWN. Every key derivation, every envelope, every stream
+#    decryption is a call into the same crate the browser compiles to WASM and the same conformance
+#    vectors arbitrate. A recovery tool that reimplemented any of it would be a second opinion
+#    nobody asked for, and the first place a mistake would hide.
+nmts-crypto = { path = "../crypto" }
+
+# The recovery map is JSON; so is the `.nmtsmap` wrapper around it.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SHA-256, to check a reassembled file against the hash the map recorded. Already in the tree —
+# `nmts-crypto` uses it for HKDF — so this adds a name here and nothing to the dependency graph.
+sha2 = "0.10"
+
+# The one network dependency: a blocking HTTP client for reading public Walrus aggregators.
+#
+# ⚠ It is a dependency on a READ path and nothing else. The account code never reaches it — keys
+#   are derived locally and the only thing that crosses the network is a request for a public blob
+#   by its public id. `--blobs-dir` skips this code entirely for anyone who would rather fetch the
+#   blobs themselves with curl; `--print-fetch-plan` prints exactly what to fetch.
+#
+# `default-features = false` drops gzip: a blob is ciphertext, so there is nothing in it to
+# compress, and a decompressor on this path would only add a way for a response to expand into
+# more memory than the map said to expect. `rustls` brings its own bundled root certificates, so
+# the tool does not depend on how the machine it is rescued onto happens to be configured.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+# Hiding what is typed at the account-code prompt, on all three desktop platforms.
+#
+# ⛔ This is here because the alternative was worse. Turning terminal echo off is a system call on
+#   Unix and a console-mode change on Windows, and calling either directly from Rust means `unsafe`,
+#   which this crate forbids. The version before this one shelled out to `stty`, which works on Unix
+#   and does not exist on Windows — so a Windows user typed their account code onto a visible screen
+#   while the program told them it was hidden. A small, widely-audited crate whose whole job is this
+#   one thing is the honest way to keep that promise everywhere.
+rpassword = "7"
+
+[dev-dependencies]
+# The offline end-to-end test builds a synthetic account and serves blobs from a directory, so the
+# whole restore path is exercised with no network at all.
+tempfile = "3"

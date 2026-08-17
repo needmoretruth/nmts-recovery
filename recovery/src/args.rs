@@ -1,0 +1,388 @@
+//! Command-line parsing, written by hand.
+//!
+//! # Why not a parsing crate
+//! This program's entire value is that a stranger can read all of it before typing their account
+//! code into it. A general-purpose argument parser is several thousand lines of someone else's
+//! code sitting in front of the one input that must never leak, and it buys us derive macros and
+//! shell completions we do not need for a dozen flags. A hundred lines here cost less to audit than
+//! one dependency, and there is no version of this file that can surprise a reader.
+//!
+//! # ⛔ The account code is not an option here, and that is deliberate
+//! There is no `--code` flag anywhere in this program. A secret passed as an argument is written
+//! to the shell's history file, is visible in `ps` to every other user on the machine, and is
+//! captured verbatim by CI logs and crash reporters. The code is read from the terminal, or from
+//! a file the caller controls the permissions of. See `read_account_code` in `main.rs`.
+//!
+//! # English is the default, in every environment
+//! Not auto-detected. A recovery may be run by whoever ends up holding the drive, on a machine
+//! whose locale says nothing about who is reading the screen, and a tool that changes language
+//! based on a variable is a tool whose output cannot be quoted in a bug report. `--lang ko`
+//! switches it, and nothing else does.
+
+use std::path::PathBuf;
+
+/// What the program was asked to do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Mode {
+    /// Open the map and print what it covers. No network, nothing written.
+    List,
+    /// Print the exact URLs a person could fetch by hand. No network, nothing written.
+    FetchPlan,
+    /// Fetch, decrypt, verify, and write the files out.
+    Restore,
+    /// Open a local control window in the browser and be driven from there.
+    Gui,
+    /// Write the GUI page out as a file and stop. Nothing else happens.
+    WriteGui,
+}
+
+/// Message language. English unless `--lang ko` says otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lang {
+    /// English.
+    En,
+    /// Korean.
+    Ko,
+}
+
+/// Everything the program was told, already validated.
+#[derive(Debug, Clone)]
+pub struct Args {
+    pub mode: Mode,
+    pub lang: Lang,
+    /// The `.nmtsmap` file. Empty in [`Mode::Gui`] until the browser picks one.
+    pub map: PathBuf,
+    /// Where restored files go. Required for [`Mode::Restore`]; a starting value in [`Mode::Gui`].
+    pub out: Option<PathBuf>,
+    /// A file holding the account code, instead of typing it.
+    pub code_file: Option<PathBuf>,
+    /// Aggregators to try, in order. Empty means the built-in list.
+    pub aggregators: Vec<String>,
+    /// Read blobs from this directory instead of the network.
+    pub blobs_dir: Option<PathBuf>,
+    /// Restore only items whose path or name contains this text.
+    pub only: Option<String>,
+    /// Replace a file that already exists at the destination.
+    pub overwrite: bool,
+    /// Fixed port for [`Mode::Gui`]. `None` means ask the operating system for a free one.
+    pub port: Option<u16>,
+    /// Leave the browser alone; print the address instead.
+    pub no_open: bool,
+    /// Where [`Mode::WriteGui`] puts the page.
+    pub gui_out: Option<PathBuf>,
+}
+
+/// Parsing outcome: either arguments, or text to print and an exit code.
+pub enum Parsed {
+    Run(Box<Args>),
+    Print(String, i32),
+}
+
+const USAGE: &str = "\
+nmts-recovery — restore files uploaded with NMTS, without NMTS.
+
+USAGE
+  nmts-recovery --map FILE --out DIR      restore, in the terminal
+  nmts-recovery --gui                     restore, from a page in your browser
+  nmts-recovery --map FILE --list         show what a map covers and stop
+
+WHAT IT NEEDS
+  Your account code, and the recovery map file you saved from NMTS. The map is
+  encrypted; the code opens it. Neither is ever sent anywhere.
+
+OPTIONS
+  --map FILE           the .nmtsmap file you saved. Required unless --gui.
+  --out DIR            where to write recovered files. Required when restoring.
+  --code-file FILE     read the account code from a file instead of typing it.
+  --aggregator URL     a Walrus aggregator to read from. Repeatable; tried in order.
+  --blobs-dir DIR      read blobs from a directory instead of the network. Each file
+                       is named after its blob id (or quilt patch id).
+  --only TEXT          restore only files whose path or name contains TEXT.
+  --overwrite          replace files that already exist. Off by default.
+  --list               print what the map covers and stop. No network.
+  --print-fetch-plan   print the URLs to fetch by hand, and stop. No network.
+  --gui                serve a control page on this machine and open it. The page
+                       cannot be reached from anywhere else, and your account code
+                       is still typed here in the terminal, never in the browser.
+  --port N             fixed port for --gui. Default: whatever is free.
+  --no-open            with --gui, print the address instead of opening a browser.
+  --write-gui FILE     write the control page out as a file and stop, so you can
+                       read it. Opening that file on its own does nothing.
+  --lang en|ko         message language. Default: en.
+  --help               this text.
+  --version            version and license.
+
+THE ACCOUNT CODE IS NEVER AN ARGUMENT. It is typed when this program asks, or read
+from --code-file. An argument would land in your shell history and be visible to every
+other user on the machine.
+";
+
+/// Parse `argv` (without the program name).
+pub fn parse(argv: &[String]) -> Parsed {
+    let mut a = Args {
+        mode: Mode::Restore,
+        lang: Lang::En,
+        map: PathBuf::new(),
+        out: None,
+        code_file: None,
+        aggregators: Vec::new(),
+        blobs_dir: None,
+        only: None,
+        overwrite: false,
+        port: None,
+        no_open: false,
+        gui_out: None,
+    };
+    let mut map_seen = false;
+
+    let mut i = 0;
+    while i < argv.len() {
+        let arg = argv[i].as_str();
+        // A flag needing a value: return it and step past both.
+        let value = |name: &str| -> Result<String, String> {
+            match argv.get(i + 1) {
+                Some(v) if !v.starts_with("--") => Ok(v.clone()),
+                _ => Err(format!("{name} needs a value.")),
+            }
+        };
+        let taken = match arg {
+            "--help" | "-h" => return Parsed::Print(USAGE.to_string(), 0),
+            "--version" | "-V" => {
+                return Parsed::Print(
+                    format!(
+                        "nmts-recovery {} — AGPL-3.0-only\n",
+                        env!("CARGO_PKG_VERSION")
+                    ),
+                    0,
+                )
+            }
+            "--list" => {
+                a.mode = Mode::List;
+                1
+            }
+            "--print-fetch-plan" => {
+                a.mode = Mode::FetchPlan;
+                1
+            }
+            "--gui" => {
+                a.mode = Mode::Gui;
+                1
+            }
+            "--overwrite" => {
+                a.overwrite = true;
+                1
+            }
+            "--no-open" => {
+                a.no_open = true;
+                1
+            }
+            "--map" => match value("--map") {
+                Ok(v) => {
+                    a.map = PathBuf::from(v);
+                    map_seen = true;
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--out" => match value("--out") {
+                Ok(v) => {
+                    a.out = Some(PathBuf::from(v));
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--code-file" => match value("--code-file") {
+                Ok(v) => {
+                    a.code_file = Some(PathBuf::from(v));
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--blobs-dir" => match value("--blobs-dir") {
+                Ok(v) => {
+                    a.blobs_dir = Some(PathBuf::from(v));
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--aggregator" => match value("--aggregator") {
+                Ok(v) => {
+                    a.aggregators.push(v.trim_end_matches('/').to_string());
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--only" => match value("--only") {
+                Ok(v) => {
+                    a.only = Some(v);
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--write-gui" => match value("--write-gui") {
+                Ok(v) => {
+                    a.mode = Mode::WriteGui;
+                    a.gui_out = Some(PathBuf::from(v));
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--port" => match value("--port") {
+                Ok(v) => match v.parse::<u16>() {
+                    // Port 0 means "any free port" to the operating system, which is the default
+                    // anyway; accepting it as an explicit request would make `--port 0` print an
+                    // address the caller did not ask for and could not have predicted.
+                    Ok(p) if p > 0 => {
+                        a.port = Some(p);
+                        2
+                    }
+                    _ => return Parsed::Print(format!("--port does not understand \"{v}\"."), 2),
+                },
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--lang" => match value("--lang") {
+                Ok(v) if v == "ko" => {
+                    a.lang = Lang::Ko;
+                    2
+                }
+                Ok(v) if v == "en" => {
+                    a.lang = Lang::En;
+                    2
+                }
+                Ok(v) => return Parsed::Print(format!("--lang does not know \"{v}\"."), 2),
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            // ⛔ The one argument this program refuses on purpose. Saying so beats an "unknown
+            //    option" that reads as a typo and invites the caller to look for the right
+            //    spelling of a flag that must never exist.
+            "--code" | "--account-code" => {
+                return Parsed::Print(
+                    "The account code is not an argument: it would be written to your shell \
+                     history and visible to other users on this machine. Run without it and let \
+                     this program ask for it, or use --code-file.\n"
+                        .to_string(),
+                    2,
+                )
+            }
+            other => return Parsed::Print(format!("Unknown option \"{other}\".\n\n{USAGE}"), 2),
+        };
+        i += taken;
+    }
+
+    // The GUI picks its map in the browser, and writing the page out reads no map at all.
+    let map_optional = matches!(a.mode, Mode::Gui | Mode::WriteGui);
+    if !map_seen && !map_optional {
+        return Parsed::Print(format!("--map is required.\n\n{USAGE}"), 2);
+    }
+    if a.mode == Mode::Restore && a.out.is_none() {
+        return Parsed::Print(format!("--out is required when restoring.\n\n{USAGE}"), 2);
+    }
+    Parsed::Run(Box::new(a))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn map_is_required() {
+        assert!(matches!(parse(&v(&["--list"])), Parsed::Print(_, 2)));
+    }
+
+    #[test]
+    fn restoring_needs_a_destination() {
+        assert!(matches!(
+            parse(&v(&["--map", "m.nmtsmap"])),
+            Parsed::Print(_, 2)
+        ));
+    }
+
+    #[test]
+    fn listing_does_not_need_a_destination() {
+        assert!(matches!(
+            parse(&v(&["--map", "m.nmtsmap", "--list"])),
+            Parsed::Run(_)
+        ));
+    }
+
+    /// The browser picks the map, so requiring one on the command line would mean typing a path
+    /// into a terminal to avoid typing a path into a terminal.
+    #[test]
+    fn the_gui_does_not_need_a_map_up_front() {
+        match parse(&v(&["--gui"])) {
+            Parsed::Run(a) => assert_eq!(a.mode, Mode::Gui),
+            Parsed::Print(msg, _) => panic!("--gui was refused: {msg}"),
+        }
+    }
+
+    /// ⛔ The refusal is the feature. If this ever passes as an ordinary flag, a secret starts
+    ///    landing in shell histories.
+    #[test]
+    fn the_account_code_cannot_be_passed_as_an_argument() {
+        match parse(&v(&["--map", "m.nmtsmap", "--code", "ABC"])) {
+            Parsed::Print(msg, 2) => assert!(msg.contains("shell history")),
+            _ => panic!("--code was accepted"),
+        }
+    }
+
+    /// ⛔ English regardless of the environment. A tool that changes language on its own produces
+    ///    output nobody can quote in a bug report, and the person reading the screen during a
+    ///    recovery is not necessarily the person whose machine it is.
+    #[test]
+    fn english_is_the_default_and_only_a_flag_changes_it() {
+        match parse(&v(&["--map", "m", "--list"])) {
+            Parsed::Run(a) => assert_eq!(a.lang, Lang::En),
+            _ => panic!("did not parse"),
+        }
+        match parse(&v(&["--map", "m", "--list", "--lang", "ko"])) {
+            Parsed::Run(a) => assert_eq!(a.lang, Lang::Ko),
+            _ => panic!("did not parse"),
+        }
+    }
+
+    #[test]
+    fn a_flag_missing_its_value_is_refused_rather_than_swallowing_the_next_flag() {
+        match parse(&v(&["--map", "--list"])) {
+            Parsed::Print(msg, 2) => assert!(msg.contains("--map needs a value")),
+            _ => panic!("--map swallowed --list"),
+        }
+    }
+
+    #[test]
+    fn aggregators_keep_their_order_and_lose_a_trailing_slash() {
+        match parse(&v(&[
+            "--map",
+            "m",
+            "--list",
+            "--aggregator",
+            "https://a.example/",
+            "--aggregator",
+            "https://b.example",
+        ])) {
+            Parsed::Run(a) => {
+                assert_eq!(a.aggregators, vec!["https://a.example", "https://b.example"]);
+            }
+            _ => panic!("did not parse"),
+        }
+    }
+
+    #[test]
+    fn a_port_that_is_not_a_port_is_refused() {
+        assert!(matches!(
+            parse(&v(&["--gui", "--port", "no"])),
+            Parsed::Print(_, 2)
+        ));
+        assert!(matches!(
+            parse(&v(&["--gui", "--port", "70000"])),
+            Parsed::Print(_, 2)
+        ));
+        match parse(&v(&["--gui", "--port", "8765"])) {
+            Parsed::Run(a) => assert_eq!(a.port, Some(8765)),
+            _ => panic!("did not parse"),
+        }
+    }
+}

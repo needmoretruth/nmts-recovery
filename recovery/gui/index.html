@@ -1,0 +1,534 @@
+<!doctype html>
+<!--
+  The nmts-recovery control window.
+
+  This file does nothing on its own. It is served by the program: run `nmts-recovery --gui` and
+  open the address it prints in your terminal. Opening this file from your disk shows one sentence
+  saying so, and that is deliberate — a page loaded from a file has no origin the program could
+  tell apart from any other page loaded from a file, so it is not admitted.
+
+  What this page is allowed to do, and what it is not:
+    * It shows what your recovery map holds and sends back which files you ticked.
+    * It never sees your account code. That is typed in the terminal window, on purpose.
+    * It holds no key, decrypts nothing, and writes no file. All of that happens in the program.
+
+  Everything it talks to is http://127.0.0.1:<port>, which only this machine can reach, and every
+  request carries the one-time token the program printed when it started.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>nmts-recovery</title>
+<style nonce="__CSP_NONCE__">
+  :root {
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --ink: #16181d;
+    --muted: #5c6270;
+    --line: #dcdde2;
+    --accent: #1f5f4a;
+    --accent-ink: #ffffff;
+    --bad: #8c2b21;
+    --good: #1f5f4a;
+    --shade: #eef0ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111317;
+      --panel: #191c22;
+      --ink: #e9ebef;
+      --muted: #9aa1ae;
+      --line: #2c313a;
+      --accent: #56b394;
+      --accent-ink: #0d1a15;
+      --bad: #e08b80;
+      --good: #56b394;
+      --shade: #21252c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    /* 1rem, not 16px: a person who has told their browser or their phone to use bigger text has
+       said something, and a rescue tool is the last place to ignore it. Every size below is in rem
+       or a relative unit for the same reason. */
+    font: 1rem/1.55 system-ui, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif;
+  }
+  /* ── Space is measured in px, text in rem ──────────────────────────────────────────────────
+     A person who turns their text up wants bigger LETTERS, not bigger margins. Padding and gaps
+     in rem grow with the text and eat the very width the letters just asked for; on a narrow
+     screen that is how a page ends up wrapping one word per line. So: spacing in px, anything
+     that is a measure of text — a column's readable width, a maximum line length — in rem. */
+  main { max-width: 60rem; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; margin-bottom: 24px; }
+  h1 { font-size: 1.15rem; margin: 0; letter-spacing: 0.01em; }
+  h2 { font-size: 1rem; margin: 24px 0 8px; }
+  .panel > h2:first-child { margin-top: 0; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin: 3px 0 0; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .grow { flex: 1 1 14rem; min-width: 0; }
+  button {
+    font: inherit; padding: 8px 15px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--shade); color: var(--ink); cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.link { background: none; border: none; color: var(--muted); text-decoration: underline; padding: 3px 5px; }
+  input[type="text"] {
+    font: inherit; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink); width: 100%;
+  }
+  label.check { display: flex; gap: 8px; align-items: baseline; }
+  .list { border: 1px solid var(--line); border-radius: 8px; max-height: min(22rem, 50vh); overflow: auto; }
+  /* Narrow: the name gets the whole width and the folder and size share the line under it. Wide:
+     one line. Never a squeezed column — a name given less room than its shortest line does not
+     shrink, it shatters, one syllable per line. */
+  .list-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0 10px;
+    align-items: baseline;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .list-row:last-child { border-bottom: none; }
+  .list-row .tick { grid-column: 1; grid-row: 1 / span 2; }
+  .list-row .name { grid-column: 2; grid-row: 1; overflow-wrap: break-word; }
+  /* Narrow: the folder and the size are ONE run of text on the second line, not two columns.
+     Two columns sharing a line this short means each is narrower than its own shortest word, and
+     what comes out is "/docume" "nts/offici" "al". As one run it simply wraps. */
+  .list-row .meta { grid-column: 2; grid-row: 2; color: var(--muted); font-size: 0.85rem; overflow-wrap: break-word; }
+  .list-row .meta .size::before { content: " · "; }
+  .list-row .size { white-space: nowrap; }
+  .note { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--shade); border-radius: 0 6px 6px 0; overflow-wrap: break-word; }
+  .note.bad { border-left-color: var(--bad); }
+  .bar { height: 8px; background: var(--shade); border-radius: 4px; overflow: hidden; margin: 10px 0; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width 0.2s linear; }
+  .log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; white-space: pre-wrap; overflow-wrap: break-word; max-height: min(18rem, 40vh); overflow: auto; margin: 0; }
+  .log .fail { color: var(--bad); }
+  /* Stacked by default: a label and its value fighting over one narrow line is how an account id
+     ends up two characters wide. The two-column form is a wide-screen luxury, below. */
+  dl.facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; margin: 0; font-size: 0.9rem; }
+  dl.facts dt { color: var(--muted); margin-top: 6px; }
+  dl.facts dt:first-child { margin-top: 0; }
+  dl.facts dd { margin: 0; overflow-wrap: anywhere; }
+  .hidden { display: none; }
+  footer { color: var(--muted); font-size: 0.85rem; margin-top: 32px; }
+
+  /* ⛔ Media rules last. A later rule of equal weight wins, so a width rule written above the
+     ordinary ones is a width rule that silently does nothing. */
+  @media (min-width: 40rem) {
+    .list-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+    /* The wrapper steps out of the way and its two children become grid items in their own right. */
+    .list-row .meta { display: contents; }
+    .list-row .meta .size::before { content: none; }
+    .list-row .dir { grid-column: 3; grid-row: 1; text-align: right; color: var(--muted); font-size: 0.85rem; overflow-wrap: break-word; }
+    .list-row .size { grid-column: 4; grid-row: 1; color: var(--muted); font-size: 0.85rem; }
+    dl.facts { grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; }
+    dl.facts dt { margin-top: 0; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>nmts-recovery</h1>
+      <p class="sub" id="tagline"></p>
+    </div>
+    <button type="button" class="link" id="lang-toggle">한국어</button>
+  </header>
+
+  <div class="panel hidden" id="offline">
+    <p id="offline-text"></p>
+  </div>
+
+  <div class="panel hidden" id="note-panel">
+    <p class="note" id="note"></p>
+  </div>
+
+  <!-- 1. Choose the map. -->
+  <section class="panel hidden" id="step-map">
+    <h2 id="map-head"></h2>
+    <p class="sub" id="map-help"></p>
+    <p class="row">
+      <input type="file" id="map-file" accept=".nmtsmap,application/json,text/plain">
+    </p>
+  </section>
+
+  <!-- 2. The terminal is asking for the account code. -->
+  <section class="panel hidden" id="step-code">
+    <h2 id="code-head"></h2>
+    <p id="code-help"></p>
+    <p class="sub" id="code-why"></p>
+  </section>
+
+  <!-- 3. What the map holds, and what to restore. -->
+  <section class="panel hidden" id="step-list">
+    <h2 id="list-head"></h2>
+    <dl class="facts" id="facts"></dl>
+    <p class="row">
+      <input type="text" id="filter" class="grow">
+      <button type="button" id="pick-all"></button>
+      <button type="button" id="pick-none"></button>
+    </p>
+    <div class="list" id="items"></div>
+    <p class="sub" id="picked-count"></p>
+    <h2 id="dest-head"></h2>
+    <p class="row"><input type="text" id="out" class="grow"></p>
+    <p><label class="check"><input type="checkbox" id="overwrite"><span id="overwrite-label"></span></label></p>
+    <p class="row"><button type="button" class="primary" id="start"></button></p>
+  </section>
+
+  <!-- 4. Running, and what happened. -->
+  <section class="panel hidden" id="step-run">
+    <h2 id="run-head"></h2>
+    <p class="sub" id="run-count"></p>
+    <div class="bar"><div id="bar-fill"></div></div>
+    <p class="sub" id="run-current"></p>
+    <pre class="log" id="log"></pre>
+    <p class="row">
+      <button type="button" class="primary hidden" id="finish"></button>
+      <button type="button" class="hidden" id="again"></button>
+    </p>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+
+<script nonce="__CSP_NONCE__">
+"use strict";
+(function () {
+  // ── The token ──────────────────────────────────────────────────────────────────────────────
+  // It stays in the address bar rather than being scrubbed out after loading. Scrubbing looks
+  // tidier and costs the reload: press F5 with no token in the URL and the page is refused, in the
+  // middle of a recovery. The token is a per-run value that only this machine can use and that
+  // stops existing when the program exits, so keeping it addressable is the better trade. The
+  // program prints the same address in the terminal if this tab is ever lost.
+  var TOKEN = new URLSearchParams(location.search).get("t") || "";
+  var LIVE = location.protocol === "http:" && TOKEN !== "";
+
+  var T = {
+    en: {
+      tagline: "Restore files uploaded with NMTS, without NMTS.",
+      offline: "This page does nothing on its own. Run nmts-recovery --gui in a terminal and open the address it prints.",
+      toggle: "한국어",
+      mapHead: "1. Choose your recovery map",
+      mapHelp: "The .nmtsmap file you saved from NMTS. It stays on this machine; nothing is uploaded.",
+      codeHead: "2. Type your account code in the terminal",
+      codeHelp: "Go to the terminal window that started this program. It is waiting for your account code.",
+      codeWhy: "Your account code is never typed into a browser. It is the master key for your account, and a browser page is the one place on this machine that other software can read.",
+      listHead: "3. Choose what to restore",
+      factMap: "Map file",
+      factAccount: "Account",
+      factSeq: "Map number",
+      factWhen: "Taken",
+      factFiles: "Files",
+      filter: "Filter by name or folder",
+      pickAll: "Select all",
+      pickNone: "Select none",
+      picked: function (n, b) { return n + " selected · " + b; },
+      destHead: "Where should they go?",
+      overwrite: "Replace files that are already there",
+      start: "Restore",
+      runHead: "Restoring",
+      doneHead: "Finished",
+      runCount: function (d, t, f) { return d + " of " + t + " done" + (f ? " · " + f + " failed" : ""); },
+      current: function (n) { return n ? "Now: " + n : ""; },
+      finish: "Close this program",
+      again: "Choose different files",
+      needSelection: "Tick at least one file first.",
+      needDest: "Say where the files should go.",
+      sendFail: "The program did not answer. It may have closed.",
+      closed: "The program has closed. You can close this tab.",
+      footer: "This page talks only to the program on this machine. Nothing here reaches the internet, and no NMTS server is contacted at any point.",
+    },
+    ko: {
+      tagline: "NMTS 없이, NMTS에 올린 파일을 되찾습니다.",
+      offline: "이 화면은 혼자서는 아무 일도 하지 않습니다. 터미널에서 nmts-recovery --gui 를 실행하고, 거기 찍히는 주소를 여십시오.",
+      toggle: "English",
+      mapHead: "1. 복구 지도 파일을 고르십시오",
+      mapHelp: "NMTS에서 저장해 두신 .nmtsmap 파일입니다. 이 기계 밖으로 나가지 않습니다.",
+      codeHead: "2. 계정 코드는 터미널에 입력하십시오",
+      codeHelp: "이 프로그램을 실행한 터미널 창으로 가십시오. 계정 코드를 기다리고 있습니다.",
+      codeWhy: "계정 코드는 브라우저에 입력하지 않습니다. 계정의 모든 열쇠가 거기서 나오는데, 브라우저 화면은 이 기계에서 다른 프로그램이 들여다볼 수 있는 유일한 자리입니다.",
+      listHead: "3. 되찾을 것을 고르십시오",
+      factMap: "지도 파일",
+      factAccount: "계정",
+      factSeq: "지도 번호",
+      factWhen: "만든 때",
+      factFiles: "파일",
+      filter: "이름이나 폴더로 거르기",
+      pickAll: "전부 고르기",
+      pickNone: "전부 풀기",
+      picked: function (n, b) { return n + "개 고름 · " + b; },
+      destHead: "어디에 놓을까요?",
+      overwrite: "이미 있는 파일을 덮어씁니다",
+      start: "되찾기",
+      runHead: "되찾는 중",
+      doneHead: "끝났습니다",
+      runCount: function (d, t, f) { return t + "개 중 " + d + "개 끝남" + (f ? " · " + f + "개 실패" : ""); },
+      current: function (n) { return n ? "지금: " + n : ""; },
+      finish: "프로그램 닫기",
+      again: "다른 파일 고르기",
+      needSelection: "파일을 하나 이상 골라 주십시오.",
+      needDest: "파일을 놓을 자리를 적어 주십시오.",
+      sendFail: "프로그램이 답하지 않습니다. 이미 닫힌 것일 수 있습니다.",
+      closed: "프로그램이 닫혔습니다. 이 탭을 닫으셔도 됩니다.",
+      footer: "이 화면은 이 기계 안의 프로그램하고만 이야기합니다. 여기서 인터넷으로 나가는 것은 없고, NMTS 서버에는 한 번도 접속하지 않습니다.",
+    },
+  };
+
+  var lang = "en";
+  var state = null;
+  var picked = new Set();
+  var localNote = null;
+  var stopped = false;
+
+  function $(id) { return document.getElementById(id); }
+  function t() { return T[lang]; }
+
+  function bytes(n) {
+    var units = ["B", "KB", "MB", "GB", "TB"];
+    var v = Number(n), u = 0;
+    while (v >= 1000 && u < units.length - 1) { v /= 1000; u += 1; }
+    return (u === 0 ? String(n) : v.toFixed(1)) + " " + units[u];
+  }
+
+  function show(id, on) { $(id).classList.toggle("hidden", !on); }
+
+  // ── Talking to the program ────────────────────────────────────────────────────────────────
+  function call(path, body) {
+    var init = {
+      method: body === undefined ? "GET" : "POST",
+      headers: { "X-Recovery-Token": TOKEN },
+      cache: "no-store",
+    };
+    if (body !== undefined) {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+    return fetch(path, init).then(function (r) {
+      return r.json().then(function (doc) {
+        if (!r.ok) { throw new Error(doc && doc.error ? doc.error : "refused"); }
+        return doc;
+      });
+    });
+  }
+
+  function poll() {
+    if (stopped) { return; }
+    call("/api/state").then(function (doc) {
+      state = doc;
+      if (doc.lang && doc.lang !== lang) { lang = doc.lang; }
+      draw();
+    }).catch(function () {
+      // The program exits when the recovery is finished and the window says so, so a request that
+      // fails after that point is expected rather than an error worth alarming anyone with.
+      if (state && state.phase === "finished") { stopped = true; localNote = t().closed; draw(); }
+    });
+  }
+
+  // ── Drawing ───────────────────────────────────────────────────────────────────────────────
+  function draw() {
+    var s = t();
+    $("tagline").textContent = s.tagline;
+    $("lang-toggle").textContent = s.toggle;
+    $("offline-text").textContent = s.offline;
+    $("footer").textContent = s.footer;
+    $("map-head").textContent = s.mapHead;
+    $("map-help").textContent = s.mapHelp;
+    $("code-head").textContent = s.codeHead;
+    $("code-help").textContent = s.codeHelp;
+    $("code-why").textContent = s.codeWhy;
+    $("list-head").textContent = s.listHead;
+    $("filter").placeholder = s.filter;
+    $("pick-all").textContent = s.pickAll;
+    $("pick-none").textContent = s.pickNone;
+    $("dest-head").textContent = s.destHead;
+    $("overwrite-label").textContent = s.overwrite;
+    $("start").textContent = s.start;
+    $("finish").textContent = s.finish;
+    $("again").textContent = s.again;
+
+    show("offline", !LIVE);
+    if (!LIVE) { return; }
+
+    var note = localNote || (state && state.note) || null;
+    show("note-panel", !!note);
+    if (note) {
+      $("note").textContent = note;
+      $("note").classList.toggle("bad", !!localNote || (state && state.phase === "need-map" && !!state.note));
+    }
+
+    var phase = state ? state.phase : "need-map";
+    show("step-map", phase === "need-map");
+    show("step-code", phase === "need-code");
+    show("step-list", phase === "ready");
+    show("step-run", phase === "restoring" || phase === "finished");
+
+    if (phase === "ready") { drawList(); }
+    if (phase === "restoring" || phase === "finished") { drawRun(phase); }
+  }
+
+  function drawList() {
+    var s = t();
+    var facts = $("facts");
+    facts.textContent = "";
+    var pairs = [
+      [s.factMap, state.map || ""],
+      [s.factAccount, state.accountId || ""],
+      [s.factSeq, String(state.seq)],
+      [s.factWhen, state.generatedAt || ""],
+      [s.factFiles, String(state.items.length)],
+    ];
+    pairs.forEach(function (pair) {
+      var dt = document.createElement("dt"); dt.textContent = pair[0];
+      var dd = document.createElement("dd"); dd.textContent = pair[1];
+      facts.appendChild(dt); facts.appendChild(dd);
+    });
+
+    if ($("out").value === "") { $("out").value = state.out || ""; }
+
+    var needle = $("filter").value.trim().toLowerCase();
+    var box = $("items");
+    box.textContent = "";
+    state.items.forEach(function (item, i) {
+      var dir = (item.path || "/").replace(/\/+$/, "");
+      var hay = (dir + "/" + item.name).toLowerCase();
+      if (needle && hay.indexOf(needle) === -1) { return; }
+      var row = document.createElement("label");
+      row.className = "list-row";
+      var tick = document.createElement("input");
+      tick.type = "checkbox";
+      tick.className = "tick";
+      tick.checked = picked.has(i);
+      tick.addEventListener("change", function () {
+        if (tick.checked) { picked.add(i); } else { picked.delete(i); }
+        drawPickedCount();
+      });
+      var name = document.createElement("span");
+      name.className = "name";
+      // textContent, never innerHTML: a file name is somebody's data and this page is not a place
+      // where somebody's data gets to be markup.
+      name.textContent = item.name;
+      var meta = document.createElement("span");
+      meta.className = "meta";
+      var where = document.createElement("span");
+      where.className = "dir";
+      where.textContent = dir === "" ? "/" : dir;
+      var size = document.createElement("span");
+      size.className = "size";
+      size.textContent = bytes(item.size);
+      meta.appendChild(where); meta.appendChild(size);
+      row.appendChild(tick); row.appendChild(name); row.appendChild(meta);
+      box.appendChild(row);
+    });
+    drawPickedCount();
+  }
+
+  function drawPickedCount() {
+    var total = 0;
+    picked.forEach(function (i) { if (state.items[i]) { total += Number(state.items[i].size); } });
+    $("picked-count").textContent = t().picked(picked.size, bytes(total));
+    $("start").disabled = picked.size === 0;
+  }
+
+  function drawRun(phase) {
+    var s = t();
+    var job = state.job;
+    $("run-head").textContent = phase === "finished" ? s.doneHead : s.runHead;
+    $("run-count").textContent = s.runCount(job.done, job.total, job.failed);
+    var whole = Number(job.bytesTotal) || 1;
+    var got = Number(job.bytesDone) + Number(job.currentBytes);
+    $("bar-fill").style.width = Math.min(100, (got / whole) * 100).toFixed(1) + "%";
+    $("run-current").textContent = s.current(job.current);
+    var log = $("log");
+    log.textContent = "";
+    job.lines.forEach(function (line) {
+      var el = document.createElement("div");
+      if (line.charAt(0) === "⛔") { el.className = "fail"; }
+      el.textContent = line;
+      log.appendChild(el);
+    });
+    show("finish", phase === "finished" && !stopped);
+    show("again", phase === "finished" && !stopped);
+  }
+
+  // ── What the person can do ────────────────────────────────────────────────────────────────
+  $("lang-toggle").addEventListener("click", function () {
+    lang = lang === "en" ? "ko" : "en";
+    document.documentElement.lang = lang;
+    if (LIVE) { call("/api/lang", { lang: lang }).catch(function () {}); }
+    draw();
+  });
+
+  $("map-file").addEventListener("change", function () {
+    var file = $("map-file").files[0];
+    if (!file) { return; }
+    localNote = null;
+    file.text().then(function (text) {
+      return call("/api/map", { name: file.name, text: text });
+    }).then(poll).catch(function (e) {
+      localNote = e.message || t().sendFail;
+      draw();
+    });
+  });
+
+  $("filter").addEventListener("input", drawList);
+
+  $("pick-all").addEventListener("click", function () {
+    var needle = $("filter").value.trim().toLowerCase();
+    state.items.forEach(function (item, i) {
+      var hay = ((item.path || "/").replace(/\/+$/, "") + "/" + item.name).toLowerCase();
+      if (!needle || hay.indexOf(needle) !== -1) { picked.add(i); }
+    });
+    drawList();
+  });
+
+  $("pick-none").addEventListener("click", function () { picked.clear(); drawList(); });
+
+  $("start").addEventListener("click", function () {
+    localNote = null;
+    if (picked.size === 0) { localNote = t().needSelection; draw(); return; }
+    var out = $("out").value.trim();
+    if (out === "") { localNote = t().needDest; draw(); return; }
+    var chosen = [];
+    picked.forEach(function (i) { chosen.push(i); });
+    chosen.sort(function (a, b) { return a - b; });
+    call("/api/restore", { items: chosen, out: out, overwrite: $("overwrite").checked })
+      .then(poll)
+      .catch(function (e) { localNote = e.message || t().sendFail; draw(); });
+  });
+
+  $("again").addEventListener("click", function () {
+    // The program keeps the map open, so going back is a matter of what this page is showing.
+    state.phase = "ready";
+    localNote = null;
+    draw();
+  });
+
+  $("finish").addEventListener("click", function () {
+    stopped = true;
+    call("/api/quit", {}).catch(function () {});
+    localNote = t().closed;
+    show("finish", false);
+    show("again", false);
+    draw();
+  });
+
+  // ── Go ────────────────────────────────────────────────────────────────────────────────────
+  draw();
+  if (LIVE) {
+    poll();
+    setInterval(poll, 700);
+  }
+})();
+</script>
+</body>
+</html>
