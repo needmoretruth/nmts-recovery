@@ -15,7 +15,7 @@
 //! shape that keeps the borrow honest is the shape that keeps the memory flat.
 //!
 //! # ⛔ A response is bounded before it is read
-//! The map states each part's plaintext length, and NCF-3 fixes the framing overhead, so the
+//! The list states each part's plaintext length, and NCF-3 fixes the framing overhead, so the
 //! ciphertext's exact length is known BEFORE the request goes out. Reading is capped at that
 //! figure plus a small margin: an aggregator that answers a 3 KB request with an endless stream
 //! gets an error instead of this program's entire memory. The cap is not a security boundary on
@@ -40,11 +40,11 @@ const LENGTH_SLACK: u64 = 4096;
 /// The aggregators tried when the caller names none.
 ///
 /// ⚠ BOTH NETWORKS ARE LISTED, and the order is not a preference so much as an admission: an
-/// NRM-2 map records the storage network by NAME (`"walrus"`) and nothing anywhere in the document
+/// NRM-2 list records the storage network by NAME (`"walrus"`) and nothing anywhere in the document
 /// says whether that was Walrus mainnet or Walrus testnet. Live NMTS data is on mainnet, so it is
-/// tried first; testnet follows so that a map from before the 2026-08-02 cutover still resolves.
+/// tried first; testnet follows so that a list from before the 2026-08-02 cutover still resolves.
 /// A blob id that belongs to neither simply 404s on both, which is the same answer either way.
-/// ▶ The real fix is a field in the next map version; until then, `--aggregator` overrides this.
+/// ▶ The real fix is a field in the next list version; until then, `--aggregator` overrides this.
 pub const DEFAULT_AGGREGATORS: [&str; 2] = [
     "https://aggregator.walrus-mainnet.walrus.space",
     "https://aggregator.walrus-testnet.walrus.space",
@@ -52,7 +52,7 @@ pub const DEFAULT_AGGREGATORS: [&str; 2] = [
 
 /// The storage network name this build knows how to fetch from.
 ///
-/// A map may name a network that did not exist when this build was made. Refusing by name is what
+/// A list may name a network that did not exist when this build was made. Refusing by name is what
 /// keeps such a part from being fetched from the wrong network's aggregator and failing later as
 /// "damaged" — see `Part::network_name` in the crypto crate for why the field is a word.
 pub const KNOWN_NETWORK: &str = "walrus";
@@ -64,13 +64,26 @@ pub enum BlobRef {
     Whole(String),
     /// One patch inside a quilt, by its patch id. Its bytes are a complete NCF-3 stream.
     Patch(String),
+    /// One patch inside a NAMED quilt, by the identifier the writer gave it.
+    ///
+    /// Used for the items a storage-network manifest describes from inside the very quilt it was
+    /// written into: that quilt's blob id is a hash of its own contents, this document included,
+    /// so the writer could not name it and recorded the patch's identifier instead (NRM-3). The
+    /// quilt id here is the one the READER fetched the document from.
+    InQuilt {
+        /// Blob id of the quilt the manifest was read out of.
+        quilt_id: String,
+        /// The patch's identifier within it.
+        identifier: String,
+    },
 }
 
 impl BlobRef {
-    /// The id as it appears in the map — what a person sees in errors and in the fetch plan.
+    /// The id as it appears in the list — what a person sees in errors and in the fetch plan.
     pub fn id(&self) -> &str {
         match self {
             BlobRef::Whole(id) | BlobRef::Patch(id) => id,
+            BlobRef::InQuilt { identifier, .. } => identifier,
         }
     }
 
@@ -79,6 +92,14 @@ impl BlobRef {
         match self {
             BlobRef::Whole(id) => format!("/v1/blobs/{}", urlencode(id)),
             BlobRef::Patch(id) => format!("/v1/blobs/by-quilt-patch-id/{}", urlencode(id)),
+            BlobRef::InQuilt {
+                quilt_id,
+                identifier,
+            } => format!(
+                "/v1/blobs/by-quilt-id/{}/{}",
+                urlencode(quilt_id),
+                urlencode(identifier)
+            ),
         }
     }
 
@@ -92,6 +113,10 @@ impl BlobRef {
         let prefix = match self {
             BlobRef::Whole(_) => "blob-",
             BlobRef::Patch(_) => "patch-",
+            // Distinct from `patch-` on purpose: the two name DIFFERENT things (a patch id is
+            // global, an identifier is only meaningful inside one quilt), and a `--blobs-dir`
+            // holding both must not have one silently satisfy a request for the other.
+            BlobRef::InQuilt { .. } => "inquilt-",
         };
         let safe: String = self
             .id()
@@ -148,7 +173,7 @@ pub enum SourceError {
 pub trait BlobSource {
     /// Open one part's ciphertext and hand a reader to `consume`.
     ///
-    /// `plaintext_len` comes from the map and bounds the read. `consume` is called at most once.
+    /// `plaintext_len` comes from the list and bounds the read. `consume` is called at most once.
     fn open(
         &self,
         r: &BlobRef,

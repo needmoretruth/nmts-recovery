@@ -3,19 +3,19 @@
 //! NMTS encrypts every file in the browser before it is uploaded, and the keys come from the
 //! account code. That design has an obligation attached to it: if NMTS disappears, the files must
 //! still be recoverable, and the person must not have to take our word for it. This program is
-//! that obligation, discharged — it needs the account code and the recovery map, reads public
+//! that obligation, discharged — it needs the account code and the recovery list, reads public
 //! Walrus aggregators, and **contacts no NMTS server at any point**.
 //!
 //! ## Two ways to run it, one program underneath
 //! * In the terminal: `--map FILE --out DIR`, and everything is printed as it happens.
 //! * From a browser: `--gui` opens a control window served to this machine only. The window shows
-//!   what the map holds and sends back which files were ticked; every key, every fetch, every
+//!   what the list holds and sends back which files were ticked; every key, every fetch, every
 //!   decryption and every write still happens here. See `gui/mod.rs`.
 //!
 //! ## What it does not do, stated plainly
-//! * It cannot find your files without the recovery map. The map is what holds each file's key
+//! * It cannot find your files without the recovery list. The list is what holds each file's key
 //!   and where its pieces are stored. Blob addresses on Walrus come from the CONTENT, so nothing
-//!   derives them from an account code; the map is the index, and today it lives either in NMTS's
+//!   derives them from an account code; the list is the index, and today it lives either in NMTS's
 //!   database or in the `.nmtsmap` file you saved.
 //! * It cannot recover anything you deleted. Deletion in NMTS destroys the key, and the key is
 //!   what this program needs.
@@ -31,6 +31,7 @@
 
 mod args;
 mod derive;
+mod discover;
 mod gui;
 mod kitfile;
 mod mapfile;
@@ -63,6 +64,12 @@ fn main() -> ExitCode {
     };
 
     let outcome = match a.mode {
+        // The list is found BEFORE the window opens, because finding it needs the account code
+        // and the account code is typed in the terminal — never in the browser.
+        Mode::Gui if a.find => find_on_network(&a, a.lang).and_then(|(manifest, quilt_id)| {
+            let name = msg::FIND_LIST_NAME.get(a.lang).to_string();
+            gui::run_with(&a, Some((manifest, quilt_id, name)))
+        }),
         Mode::Gui => gui::run(&a),
         Mode::WriteGui => write_gui(&a),
         Mode::Derive => show_derived(&a),
@@ -125,6 +132,72 @@ fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
 
 fn run(a: &args::Args) -> Result<ExitCode, String> {
     let lang = a.lang;
+    // Two ways in, one place they meet. Either a person hands over a file, or the account code is
+    // used to go and look for the list where it is stored (NCF-3 §2.5).
+    let (manifest, own_quilt) = if a.find {
+        let (m, quilt) = find_on_network(a, lang)?;
+        (m, Some(quilt))
+    } else {
+        open_from_file(a, lang)?
+    };
+    proceed(&manifest, own_quilt.as_deref(), a, lang)
+}
+
+/// Look the recovery list up on the storage network with nothing but the account code.
+fn find_on_network(a: &args::Args, lang: Lang) -> Result<(RecoveryManifest, String), String> {
+    let code = read_account_code(a.code_file.as_deref(), lang)?;
+    let keys = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
+
+    let rpcs: Vec<String> = if a.rpcs.is_empty() {
+        discover::DEFAULT_RPCS.iter().map(|s| s.to_string()).collect()
+    } else {
+        a.rpcs.clone()
+    };
+    let aggregators: Vec<String> = if a.aggregators.is_empty() {
+        source::DEFAULT_AGGREGATORS.iter().map(|s| s.to_string()).collect()
+    } else {
+        a.aggregators.clone()
+    };
+
+    println!("{}", msg::FIND_LOOKING.get(lang));
+    let search = discover::find(&keys, &rpcs, &aggregators, a.owner.as_deref(), a.wallets);
+    for owner in &search.owners {
+        println!("  {owner}");
+    }
+    if search.truncated {
+        eprintln!("⚠ {}", msg::FIND_TRUNCATED.get(lang));
+    }
+    // Problems are printed whether or not the search succeeded: a list found under one address
+    // while another address could not be reached is a partial answer, and saying so is the
+    // difference between "you have nothing" and "one node was down".
+    for problem in &search.problems {
+        eprintln!("⚠ {problem}");
+    }
+
+    let Some(found) = search.found else {
+        return Err(format!(
+            "{} ({} {})",
+            msg::FIND_NOTHING.get(lang),
+            search.quilts_seen,
+            msg::FIND_BUNDLES_SEEN.get(lang)
+        ));
+    };
+    // The address is printed too, and not as decoration: when several were searched, which one
+    // holds the list is the difference between "this account" and "a wallet you also control".
+    println!(
+        "{} {} · {} {} · {} {}",
+        msg::FIND_FOUND.get(lang),
+        found.quilt_id,
+        msg::FIND_SEQ.get(lang),
+        found.manifest.seq,
+        msg::FIND_UNDER.get(lang),
+        found.owner
+    );
+    Ok((found.manifest, found.quilt_id))
+}
+
+/// Open a recovery list — or a recovery kit, which has one inside it — from a file.
+fn open_from_file(a: &args::Args, lang: Lang) -> Result<(RecoveryManifest, Option<String>), String> {
     let raw = std::fs::read_to_string(&a.map).map_err(|e| format!("{}: {e}", a.map.display()))?;
     // A recovery kit has the list inside it, so either file gets a person to the same place.
     let (wrapper, code_in_kit) = if kitfile::looks_like_kit(&raw) {
@@ -147,8 +220,8 @@ fn run(a: &args::Args) -> Result<ExitCode, String> {
     };
     let keys = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
 
-    // ⛔ THE ACCOUNT IS CHECKED BEFORE THE MAP IS OPENED, and the order is the point. Both a wrong
-    //    code and a damaged map fail the same decryption, and a person told "the map would not
+    // ⛔ THE ACCOUNT IS CHECKED BEFORE THE LIST IS OPENED, and the order is the point. Both a wrong
+    //    code and a damaged list fail the same decryption, and a person told "the list would not
     //    open" when the truth is "that is a different account's code" will go looking for a backup
     //    of a file that was never broken. The account id is public and carried in the wrapper
     //    exactly so this distinction can be made.
@@ -158,7 +231,7 @@ fn run(a: &args::Args) -> Result<ExitCode, String> {
 
     let sealed = nmts_crypto::b64::decode(&wrapper.sealed).map_err(|_| {
         format!(
-            "{} — the sealed map is not readable.",
+            "{} — the sealed list is not readable.",
             msg::MAP_NOT_A_MAP.get(lang)
         )
     })?;
@@ -177,8 +250,18 @@ fn run(a: &args::Args) -> Result<ExitCode, String> {
         );
     }
 
+    Ok((manifest, None))
+}
+
+/// List, plan or restore — the same three things whichever way the document arrived.
+fn proceed(
+    manifest: &RecoveryManifest,
+    own_quilt: Option<&str>,
+    a: &args::Args,
+    lang: Lang,
+) -> Result<ExitCode, String> {
     let out_dir = a.out.clone().unwrap_or_else(|| Path::new(".").to_path_buf());
-    let planned = restore::plan(&manifest, &out_dir, a.only.as_deref());
+    let planned = restore::plan(manifest, &out_dir, a.only.as_deref(), own_quilt);
     if planned.is_empty() {
         println!("{}", msg::NOTHING_MATCHED.get(lang));
         return Ok(ExitCode::from(1));
@@ -186,16 +269,16 @@ fn run(a: &args::Args) -> Result<ExitCode, String> {
 
     match a.mode {
         Mode::List => {
-            print_summary(&manifest, &planned, lang);
+            print_summary(manifest, &planned, lang);
             Ok(ExitCode::SUCCESS)
         }
         Mode::FetchPlan => {
-            print_summary(&manifest, &planned, lang);
+            print_summary(manifest, &planned, lang);
             print_fetch_plan(&planned, a, lang);
             Ok(ExitCode::SUCCESS)
         }
         _ => {
-            print_summary(&manifest, &planned, lang);
+            print_summary(manifest, &planned, lang);
             do_restore(&planned, a, lang)
         }
     }
@@ -251,12 +334,12 @@ fn open_kit(raw: &str, lang: Lang) -> Result<(mapfile::MapFile, Option<String>),
     Ok((wrapper, kit.account_code))
 }
 
-/// What the map covers. Printed in every mode, because a person should see what they are about to
+/// What the list covers. Printed in every mode, because a person should see what they are about to
 /// act on before anything is fetched or written.
 fn print_summary(manifest: &RecoveryManifest, planned: &[restore::PlannedItem<'_>], lang: Lang) {
     let bytes: u64 = planned.iter().map(|p| p.item.size).sum();
     println!(
-        "{} {} files, {} (map #{}, taken {})",
+        "{} {} files, {} (list #{}, taken {})",
         msg::SUMMARY_HEAD.get(lang),
         planned.len(),
         msg::human_bytes(bytes),
@@ -285,9 +368,16 @@ fn print_fetch_plan(planned: &[restore::PlannedItem<'_>], a: &args::Args, lang: 
     let base = http.endpoints().first().map(String::as_str).unwrap_or("");
     println!("\n{}", msg::FETCH_PLAN_HEAD.get(lang));
     for p in planned {
-        let Some(refs) = p.refs() else {
-            println!("  # \"{}\" {}", p.item.name, msg::UNKNOWN_NETWORK.get(lang));
-            continue;
+        let refs = match p.refs() {
+            Ok(refs) => refs,
+            Err(problem) => {
+                let why = match problem {
+                    restore::RefProblem::UnknownNetwork => msg::UNKNOWN_NETWORK.get(lang),
+                    restore::RefProblem::OwnQuiltUnknown => msg::OWN_QUILT_UNKNOWN.get(lang),
+                };
+                println!("  # \"{}\" {why}", p.item.name);
+                continue;
+            }
         };
         for (blob, _) in refs {
             println!("  curl -fL -o {} {}{}", blob.file_name(), base, blob.url_path());

@@ -24,7 +24,7 @@ use std::path::PathBuf;
 /// What the program was asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
-    /// Open the map and print what it covers. No network, nothing written.
+    /// Open the list and print what it covers. No network, nothing written.
     List,
     /// Print the exact URLs a person could fetch by hand. No network, nothing written.
     FetchPlan,
@@ -34,7 +34,7 @@ pub enum Mode {
     Gui,
     /// Write the GUI page out as a file and stop. Nothing else happens.
     WriteGui,
-    /// Print what the account code derives — no map, no network, nothing written.
+    /// Print what the account code derives — no list, no network, nothing written.
     Derive,
 }
 
@@ -52,8 +52,22 @@ pub enum Lang {
 pub struct Args {
     pub mode: Mode,
     pub lang: Lang,
-    /// The `.nmtsmap` file. Empty in [`Mode::Gui`] until the browser picks one.
+    /// The `.nmtsmap` file. Empty in [`Mode::Gui`] until the browser picks one, and when the list
+    /// is to be looked for on the storage network instead ([`Args::find`]).
     pub map: PathBuf,
+    /// Look the recovery list up on the storage network from the account code alone.
+    ///
+    /// Explicit rather than inferred from an absent `--map`, because the two mistakes are not
+    /// symmetric: a mistyped path should say the file is missing, not quietly start asking public
+    /// services about an address.
+    pub find: bool,
+    /// Sui JSON-RPC endpoints for `--find`, in order. Empty means the built-in list.
+    pub rpcs: Vec<String>,
+    /// The wallet address that paid for the uploads, when the account code does not derive it.
+    ///
+    /// For accounts that upload through a browser-extension wallet or an imported key: their blob
+    /// objects are owned by an address nothing can compute from the code, so the person gives it.
+    pub owner: Option<String>,
     /// Where restored files go. Required for [`Mode::Restore`]; a starting value in [`Mode::Gui`].
     pub out: Option<PathBuf>,
     /// A file holding the account code, instead of typing it.
@@ -99,18 +113,28 @@ nmts-recovery — restore files uploaded with NMTS, without NMTS.
 
 USAGE
   nmts-recovery --map FILE --out DIR      restore, in the terminal
+  nmts-recovery --find --out DIR          restore with only your account code
   nmts-recovery --gui                     restore, from a page in your browser
   nmts-recovery --map FILE --list         show what a list covers and stop
   nmts-recovery --derive                  show what your account code derives
 
 WHAT IT NEEDS
-  Your account code, and the recovery map file you saved from NMTS. The map is
-  encrypted; the code opens it. Neither is ever sent anywhere.
+  Your account code, and your recovery list. The list is encrypted; the code opens
+  it. You can hand over the file you saved from NMTS, or use --find and let this
+  program look the list up on the storage network. Neither is ever sent anywhere.
 
 OPTIONS
   --map FILE           the recovery list (.nmtsmap) you saved, OR a recovery kit
-                       (.txt), which has the list inside it. Required unless --gui
-                       or --derive.
+                       (.txt), which has the list inside it. Required unless --find,
+                       --gui or --derive.
+  --find               look the recovery list up on the storage network using your
+                       account code alone — no saved file needed. Works when the
+                       account turned the storage-network copy on and paid with the
+                       wallet the account code derives.
+  --rpc URL            a Sui node for --find to ask. Repeatable; tried in order.
+  --owner 0xADDRESS    with --find, the wallet that paid for the uploads. Needed only
+                       when that wallet is a browser extension or an imported key,
+                       because the account code cannot derive such an address.
   --out DIR            where to write recovered files. Required when restoring.
   --code-file FILE     read the account code from a file instead of typing it.
   --aggregator URL     a Walrus aggregator to read from. Repeatable; tried in order.
@@ -118,7 +142,7 @@ OPTIONS
                        is named after its blob id (or quilt patch id).
   --only TEXT          restore only files whose path or name contains TEXT.
   --overwrite          replace files that already exist. Off by default.
-  --list               print what the map covers and stop. No network.
+  --list               print what the list covers and stop. No network.
   --print-fetch-plan   print the URLs to fetch by hand, and stop. No network.
   --gui                serve a control page on this machine and open it. The page
                        cannot be reached from anywhere else, and your account code
@@ -129,8 +153,9 @@ OPTIONS
                        read it. Opening that file on its own does nothing.
   --derive             print what your account code derives — the account id, its
                        fingerprint, your public code, and your wallet addresses.
-                       No map, no network, nothing written.
-  --wallets N          how many wallets --derive walks. Default: 1.
+                       No list, no network, nothing written.
+  --wallets N          how many wallets --derive walks, and how many --find looks
+                       under. Default: 1.
   --secrets            with --derive, also print the wallet private keys. Anyone
                        who reads them can spend from those wallets.
   --lang en|ko         message language. Default: en.
@@ -148,6 +173,9 @@ pub fn parse(argv: &[String]) -> Parsed {
         mode: Mode::Restore,
         lang: Lang::En,
         map: PathBuf::new(),
+        find: false,
+        rpcs: Vec::new(),
+        owner: None,
         out: None,
         code_file: None,
         aggregators: Vec::new(),
@@ -199,6 +227,10 @@ pub fn parse(argv: &[String]) -> Parsed {
                 a.mode = Mode::Derive;
                 1
             }
+            "--find" => {
+                a.find = true;
+                1
+            }
             "--secrets" => {
                 a.secrets = true;
                 1
@@ -236,6 +268,20 @@ pub fn parse(argv: &[String]) -> Parsed {
             "--blobs-dir" => match value("--blobs-dir") {
                 Ok(v) => {
                     a.blobs_dir = Some(PathBuf::from(v));
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--rpc" => match value("--rpc") {
+                Ok(v) => {
+                    a.rpcs.push(v.trim_end_matches('/').to_string());
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--owner" => match value("--owner") {
+                Ok(v) => {
+                    a.owner = Some(v.to_string());
                     2
                 }
                 Err(e) => return Parsed::Print(e, 2),
@@ -321,9 +367,23 @@ pub fn parse(argv: &[String]) -> Parsed {
 
     // The GUI picks its list in the browser, writing the page out reads nothing, and deriving
     // needs only the account code.
-    let map_optional = matches!(a.mode, Mode::Gui | Mode::WriteGui | Mode::Derive);
+    let map_optional = matches!(a.mode, Mode::Gui | Mode::WriteGui | Mode::Derive) || a.find;
     if !map_seen && !map_optional {
-        return Parsed::Print(format!("--map is required.\n\n{USAGE}"), 2);
+        return Parsed::Print(
+            format!("--map is required, or --find to look the list up on the storage network.\n\n{USAGE}"),
+            2,
+        );
+    }
+    // Both at once is a person telling the program two different places to get the same document.
+    // Picking one would work most of the time and be wrong exactly when it mattered.
+    if map_seen && a.find {
+        return Parsed::Print(
+            format!("--map and --find both say where the recovery list is. Use one.\n\n{USAGE}"),
+            2,
+        );
+    }
+    if a.owner.is_some() && !a.find {
+        return Parsed::Print(format!("--owner only means something with --find.\n\n{USAGE}"), 2);
     }
     if a.mode == Mode::Restore && a.out.is_none() {
         return Parsed::Print(format!("--out is required when restoring.\n\n{USAGE}"), 2);
@@ -360,7 +420,7 @@ mod tests {
         ));
     }
 
-    /// The browser picks the map, so requiring one on the command line would mean typing a path
+    /// The browser picks the list, so requiring one on the command line would mean typing a path
     /// into a terminal to avoid typing a path into a terminal.
     #[test]
     fn the_gui_does_not_need_a_map_up_front() {

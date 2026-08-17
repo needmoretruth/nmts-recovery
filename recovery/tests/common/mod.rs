@@ -3,11 +3,11 @@
 //! # Why it is shared rather than copied
 //! Two test files run the same program two ways — from the terminal and through the control
 //! window — and the whole point of having both is that they exercise ONE recovery. If each built
-//! its own fixture, a change to how a map is written could be made in one and forgotten in the
+//! its own fixture, a change to how a list is written could be made in one and forgotten in the
 //! other, and the pair would go on passing while agreeing about nothing.
 //!
 //! Everything here is real: a real account code, real NCF-3 streams under real per-file keys, and
-//! a real sealed map, all produced by the same crate the browser compiles to WASM.
+//! a real sealed list, all produced by the same crate the browser compiles to WASM.
 
 // Each integration test binary compiles this module separately, so whichever one does not call a
 // given helper would otherwise report it as dead. The helpers are used; just not all by everyone.
@@ -21,7 +21,7 @@ use nmts_crypto::framing::StreamEncryptor;
 use nmts_crypto::manifest::{Item, Part, Quilt, RecoveryManifest};
 use nmts_crypto::{b64, kdf, wrap};
 
-/// One synthesised account with a map, a blob folder, and somewhere to restore into.
+/// One synthesised account with a list, a blob folder, and somewhere to restore into.
 pub struct Fixture {
     pub dir: tempfile::TempDir,
     pub code: AccountCode,
@@ -67,15 +67,16 @@ impl Fixture {
             fs::write(self.path("blobs").join(file_name), &stream).expect("blob");
             manifest_parts.push(Part {
                 part_index: Some(u64::from(index)),
-                blob_id: id.clone(),
+                blob_id: Some(id.clone()),
                 plaintext_len: slice.len() as u64,
                 network: Some("walrus".into()),
                 sui_object_id: None,
             });
         }
         let quilt = quilted.then(|| Quilt {
-            quilt_blob_id: "COHORT".into(),
-            patch_id: format!("{name}-0").replace('.', "-"),
+            quilt_blob_id: Some("COHORT".into()),
+            patch_id: Some(format!("{name}-0").replace('.', "-")),
+            identifier: None,
         });
         Item {
             id: format!("id-{name}"),
@@ -109,7 +110,7 @@ impl Fixture {
             keys.account_id_b64(),
             b64::encode(&sealed)
         );
-        fs::write(self.path("map.nmtsmap"), doc).expect("map file");
+        fs::write(self.path("map.nmtsmap"), doc).expect("list file");
     }
 
     /// Write a recovery KIT beside the list: the same sealed document, plus the account code, in

@@ -25,7 +25,7 @@ const MAX_HEAD: usize = 16 * 1024;
 /// How many header lines are read before the request is refused.
 const MAX_HEADERS: usize = 64;
 
-/// The largest body accepted. A recovery map for a very large account is a few megabytes of
+/// The largest body accepted. A recovery list for a very large account is a few megabytes of
 /// base64; this leaves room for an order of magnitude more and stops well short of a number that
 /// would matter on the kind of machine somebody rescues a drive onto.
 pub const MAX_BODY: usize = 32 * 1024 * 1024;

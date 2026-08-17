@@ -2,12 +2,12 @@
 //!
 //! # Why this runs the BINARY rather than calling functions
 //! The claim the tool makes is "you can get your files back with this program". Calling its
-//! internals proves the internals; running `nmts-recovery` with arguments, a map file, and a folder
+//! internals proves the internals; running `nmts-recovery` with arguments, a list file, and a folder
 //! of blobs proves the claim — argument handling, exit codes and all. Cargo hands the test the
 //! built binary's path in `CARGO_BIN_EXE_nmts-recovery`, so no path is guessed here.
 //!
 //! # What is synthesised
-//! A real account code, real NCF-3 streams under real per-file keys, and a real sealed map. The
+//! A real account code, real NCF-3 streams under real per-file keys, and a real sealed list. The
 //! bytes these tests feed the tool are produced by the same crate the browser compiles to WASM,
 //! so a change that made the browser and the tool disagree fails here rather than in someone's
 //! recovery.
@@ -26,7 +26,7 @@ fn restored(fx: &Fixture, rel: &str) -> Vec<u8> {
     fs::read(fx.path("out").join(rel)).unwrap_or_else(|e| panic!("{rel} was not restored: {e}"))
 }
 
-/// The claim, tested: an account code plus a map plus the stored bytes gives the files back.
+/// The claim, tested: an account code plus a list plus the stored bytes gives the files back.
 #[test]
 fn a_code_and_a_map_give_the_files_back() {
     let fx = Fixture::new();
@@ -63,7 +63,7 @@ fn parts_served_in_the_wrong_order_are_refused_rather_than_written() {
     let fx = Fixture::new();
     let bytes: Vec<u8> = (0..100_000u32).map(|i| (i % 253) as u8).collect();
     let mut item = fx.add_file("swapped.bin", "/", &bytes, 2, false);
-    // Swap the two parts, and renumber them so the MAP is internally consistent — this is exactly
+    // Swap the two parts, and renumber them so the LIST is internally consistent — this is exactly
     // what a hostile or broken index looks like, and the only thing left to catch it is each
     // part's own sealed header.
     item.parts.swap(0, 1);
@@ -106,7 +106,7 @@ fn wrong_order_is_caught_even_when_there_is_no_content_hash_to_fall_back_on() {
     assert!(!fx.path("out/swapped.bin").exists(), "a scrambled file was written");
 }
 
-/// A map is a file somebody can edit. Changing the recorded size must not produce a file.
+/// A list is a file somebody can edit. Changing the recorded size must not produce a file.
 #[test]
 fn a_length_the_map_invented_is_caught() {
     let fx = Fixture::new();
@@ -124,7 +124,7 @@ fn a_length_the_map_invented_is_caught() {
     );
 }
 
-/// The check that spans parts. A map naming the right bytes for the wrong file passes everything
+/// The check that spans parts. A list naming the right bytes for the wrong file passes everything
 /// else, because each part is internally perfect.
 #[test]
 fn a_content_hash_that_does_not_match_stops_the_file() {
@@ -185,7 +185,7 @@ fn a_mistyped_code_is_named_as_a_typo() {
     );
 }
 
-/// `--list` opens the map and touches nothing else: no network, no writes.
+/// `--list` opens the list and touches nothing else: no network, no writes.
 #[test]
 fn listing_shows_the_contents_and_writes_nothing() {
     let fx = Fixture::new();

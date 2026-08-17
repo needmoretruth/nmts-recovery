@@ -1,4 +1,4 @@
-//! Turning an opened recovery map into files on a disk.
+//! Turning an opened recovery list into files on a disk.
 //!
 //! Everything a recovery has to get right lives here, and it is worth naming what "right" means,
 //! because the failure this code exists to prevent is not "an error message" — it is a person
@@ -9,11 +9,11 @@
 //!      write into. Sorting the parts by their own claimed index first would make every
 //!      permutation agree with itself, which is exactly the defect
 //!      `docs/RECOVERY-MANIFEST.md` §2.1 was written after finding.
-//!   2. **The length is checked twice, against two different authorities.** The map says how long
+//!   2. **The length is checked twice, against two different authorities.** The list says how long
 //!      a part is; the part's own header says so too, under the AEAD. Both must agree before a
 //!      byte is written, and the stream's own end-of-stream check runs after.
-//!   3. **The whole file is hashed and compared** when the map recorded a hash. This is the only
-//!      check that spans parts, so it is the only one that would catch a map whose parts are each
+//!   3. **The whole file is hashed and compared** when the list recorded a hash. This is the only
+//!      check that spans parts, so it is the only one that would catch a list whose parts are each
 //!      individually perfect and collectively the wrong file.
 //!   4. **Nothing half-written is left looking finished.** Every file is written under a temporary
 //!      name in its own destination directory and renamed only after every check above has passed.
@@ -27,7 +27,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use nmts_crypto::framing::{Header, PartPlacement, StreamDecryptor, HEADER_LEN};
-use nmts_crypto::manifest::{Item, RecoveryManifest};
+use nmts_crypto::manifest::{Item, Placement, Quilt, RecoveryManifest};
 use nmts_crypto::wrap::DEK_LEN;
 use sha2::{Digest, Sha256};
 
@@ -37,43 +37,75 @@ use crate::source::{BlobRef, BlobSource, SourceError, KNOWN_NETWORK};
 /// 1 GiB part, large enough that a syscall is not paid per kilobyte.
 const READ_CHUNK: usize = 256 * 1024;
 
-/// One file the map describes, resolved to where it would land.
+/// Why an item's parts could not be turned into things to fetch.
+///
+/// Two reasons, kept apart because a person can act on one of them and not the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefProblem {
+    /// The list names a storage network this build cannot read.
+    UnknownNetwork,
+    /// The item is placed in "the quilt this document came from", and this document came from a
+    /// file. Nothing about the file says which quilt that was, and guessing would fetch a
+    /// stranger's bytes — so the item is reported rather than attempted.
+    OwnQuiltUnknown,
+}
+
+/// One file the list describes, resolved to where it would land.
 pub struct PlannedItem<'a> {
     pub item: &'a Item,
     /// Destination, already confined under the output directory.
     pub dest: PathBuf,
     /// Set when the item's own path or name had to be altered to be writable here.
     pub renamed_from: Option<String>,
+    /// Blob id of the quilt this manifest was READ from, when it was read from one.
+    ///
+    /// It is the reader's knowledge, not the document's — the document cannot contain it (NRM-3,
+    /// `Quilt::identifier`). Carried per item so `refs()` needs no extra argument and no call
+    /// site can forget to supply it.
+    pub own_quilt: Option<&'a str>,
 }
 
-impl PlannedItem<'_> {
-    /// The parts, in map order, as source references. `None` when the map names a network this
-    /// build cannot read.
-    pub fn refs(&self) -> Option<Vec<(BlobRef, u64)>> {
+impl<'a> PlannedItem<'a> {
+    /// The parts, in list order, as source references.
+    pub fn refs(&self) -> Result<Vec<(BlobRef, u64)>, RefProblem> {
         let mut out = Vec::with_capacity(self.item.parts.len());
         for part in &self.item.parts {
             if part.network_name() != KNOWN_NETWORK {
-                return None;
+                return Err(RefProblem::UnknownNetwork);
             }
             // A quilted item is one patch inside one shared blob, so it has exactly one part and
-            // the patch id is what an aggregator serves it by. Reading it as a whole blob would
-            // hand back the entire cohort — everyone's ciphertext, not this file's.
-            let r = match (&self.item.quilt, self.item.parts.len()) {
-                (Some(q), 1) => BlobRef::Patch(q.patch_id.clone()),
-                _ => BlobRef::Whole(part.blob_id.clone()),
+            // the patch is what an aggregator serves it by. Reading it as a whole blob would hand
+            // back the entire cohort — everyone's ciphertext, not this file's.
+            let r = match (self.item.quilt.as_ref().and_then(Quilt::placement), self.item.parts.len()) {
+                (Some(Placement::Absolute { patch_id, .. }), 1) => BlobRef::Patch(patch_id.to_owned()),
+                (Some(Placement::OwnQuilt { identifier }), 1) => BlobRef::InQuilt {
+                    quilt_id: self.own_quilt.ok_or(RefProblem::OwnQuiltUnknown)?.to_owned(),
+                    identifier: identifier.to_owned(),
+                },
+                // Not quilted (or a shape the parse already refuses): the part names its own blob.
+                _ => BlobRef::Whole(
+                    part.blob_id
+                        .clone()
+                        .ok_or(RefProblem::OwnQuiltUnknown)?,
+                ),
             };
             out.push((r, part.plaintext_len));
         }
-        Some(out)
+        Ok(out)
     }
 }
 
-/// Resolve every item in the map to a destination under `out`.
+/// Resolve every item in the list to a destination under `out`.
 ///
-/// `only` filters on the path and the name as the MAP spells them, not as they land on disk — a
+/// `only` filters on the path and the name as the LIST spells them, not as they land on disk — a
 /// person filtering for a folder they remember should not have to know what this program did to
 /// make the name writable.
-pub fn plan<'a>(manifest: &'a RecoveryManifest, out: &Path, only: Option<&str>) -> Vec<PlannedItem<'a>> {
+pub fn plan<'a>(
+    manifest: &'a RecoveryManifest,
+    out: &Path,
+    only: Option<&str>,
+    own_quilt: Option<&'a str>,
+) -> Vec<PlannedItem<'a>> {
     let mut taken: HashSet<PathBuf> = HashSet::new();
     let mut planned = Vec::new();
     for item in &manifest.items {
@@ -95,7 +127,7 @@ pub fn plan<'a>(manifest: &'a RecoveryManifest, out: &Path, only: Option<&str>) 
         altered |= safe_name != item.name;
         dest.push(&safe_name);
         // Two files may legitimately share a name. NMTS keeps no version history — a second file
-        // of the same name is numbered `(2)` rather than replacing the first — and a map written
+        // of the same name is numbered `(2)` rather than replacing the first — and a list written
         // across a rename can hold both. Either way, letting the second overwrite the first here
         // would lose a file silently, which is the one thing a recovery may never do.
         let dest = deduplicate(dest, &mut taken);
@@ -103,6 +135,7 @@ pub fn plan<'a>(manifest: &'a RecoveryManifest, out: &Path, only: Option<&str>) 
             item,
             dest,
             renamed_from: if altered { Some(original) } else { None },
+            own_quilt,
         });
     }
     planned
@@ -181,7 +214,7 @@ pub struct Outcome {
 /// Something true about a restored file that the person should know.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Note {
-    /// The map is NRM-1: it never recorded where each part belongs.
+    /// The list is NRM-1: it never recorded where each part belongs.
     PartOrderUnverifiable,
     /// The item predates content hashes, so nothing spans the parts.
     NoContentHash,
@@ -206,11 +239,15 @@ pub fn restore_item(
             planned.dest.display()
         ));
     }
-    let refs = planned
-        .refs()
-        .ok_or_else(|| format!("\"{}\" {}", item.name, crate::msg::UNKNOWN_NETWORK.get(lang)))?;
+    let refs = planned.refs().map_err(|problem| {
+        let why = match problem {
+            RefProblem::UnknownNetwork => crate::msg::UNKNOWN_NETWORK.get(lang),
+            RefProblem::OwnQuiltUnknown => crate::msg::OWN_QUILT_UNKNOWN.get(lang),
+        };
+        format!("\"{}\" {why}", item.name)
+    })?;
     if refs.is_empty() {
-        return Err(format!("\"{}\" has no stored parts in the map", item.name));
+        return Err(format!("\"{}\" has no stored parts in the list", item.name));
     }
 
     let dek = decode_dek(&item.dek)?;
@@ -240,7 +277,7 @@ pub fn restore_item(
                 }
             } else if claimed != Some(u64::from(position)) {
                 return Err(format!(
-                    "the map lists part {} of \"{}\" in position {}",
+                    "the list places part {} of \"{}\" at position {}",
                     claimed.unwrap_or_default(),
                     item.name,
                     position
@@ -270,19 +307,19 @@ pub fn restore_item(
 
         if written != item.size {
             return Err(format!(
-                "the map says this file is {} bytes and its parts produced {written}",
+                "the list says this file is {} bytes and its parts produced {written}",
                 item.size
             ));
         }
-        // The only check that spans parts. Without it, a map naming the right parts in the right
+        // The only check that spans parts. Without it, a list naming the right parts in the right
         // order for the WRONG file passes everything else, because every part is internally valid.
         match &item.content_hash {
             Some(expected) => {
                 let got: [u8; 32] = hasher.finalize_reset().into();
                 let want = nmts_crypto::b64::decode(expected)
-                    .map_err(|_| "the map's recorded content hash is not readable".to_string())?;
+                    .map_err(|_| "the list's recorded content hash is not readable".to_string())?;
                 if want != got {
-                    return Err("the reassembled file does not match the hash the map recorded".to_string());
+                    return Err("the reassembled file does not match the hash the list recorded".to_string());
                 }
             }
             None => notes.push(Note::NoContentHash),
@@ -330,7 +367,7 @@ fn decrypt_part(
         })?;
     if header.plaintext_len != map_says {
         return Err(format!(
-            "the map says this part is {map_says} bytes and the part itself says {}",
+            "the list says this part is {map_says} bytes and the part itself says {}",
             header.plaintext_len
         ));
     }
@@ -363,11 +400,11 @@ fn decrypt_part(
     Ok(produced)
 }
 
-/// The item's DEK, which the map carries raw because the map is itself one envelope.
+/// The item's DEK, which the list carries raw because the list is itself one envelope.
 fn decode_dek(b64: &str) -> Result<[u8; DEK_LEN], String> {
-    let raw = nmts_crypto::b64::decode(b64).map_err(|_| "the map's stored key is not readable".to_string())?;
+    let raw = nmts_crypto::b64::decode(b64).map_err(|_| "the list's stored key is not readable".to_string())?;
     raw.try_into()
-        .map_err(|_| "the map's stored key is the wrong length".to_string())
+        .map_err(|_| "the list's stored key is the wrong length".to_string())
 }
 
 /// An item id reduced to something safe in a temporary filename.
@@ -393,8 +430,8 @@ mod tests {
         assert_eq!(safe_segment("C:"), "C_");
     }
 
-    /// ⛔ The invariant the whole path treatment exists for: whatever the map says, the write lands
-    ///    under the output directory. A map is a file somebody could have edited.
+    /// ⛔ The invariant the whole path treatment exists for: whatever the list says, the write lands
+    ///    under the output directory. A list is a file somebody could have edited.
     #[test]
     fn no_planned_destination_escapes_the_output_directory() {
         let manifest = manifest_with_paths(&[
@@ -404,7 +441,7 @@ mod tests {
             ("/", "/etc/shadow"),
         ]);
         let out = Path::new("/tmp/out");
-        for p in plan(&manifest, out, None) {
+        for p in plan(&manifest, out, None, None) {
             assert!(p.dest.starts_with(out), "{} escaped", p.dest.display());
             assert!(
                 !p.dest.components().any(|c| c == Component::ParentDir),
@@ -417,7 +454,7 @@ mod tests {
     #[test]
     fn an_altered_name_is_reported_and_an_untouched_one_is_not() {
         let manifest = manifest_with_paths(&[("/docs", "notes.txt"), ("/docs", "a:b.txt")]);
-        let planned = plan(&manifest, Path::new("/tmp/out"), None);
+        let planned = plan(&manifest, Path::new("/tmp/out"), None, None);
         assert_eq!(planned[0].renamed_from, None);
         assert_eq!(planned[1].renamed_from.as_deref(), Some("/docs/a:b.txt"));
     }
@@ -425,7 +462,7 @@ mod tests {
     #[test]
     fn two_files_of_one_name_both_land() {
         let manifest = manifest_with_paths(&[("/d", "a.txt"), ("/d", "a.txt"), ("/d", "a.txt")]);
-        let planned = plan(&manifest, Path::new("/tmp/out"), None);
+        let planned = plan(&manifest, Path::new("/tmp/out"), None, None);
         assert!(planned[0].dest.ends_with("a.txt"));
         assert!(planned[1].dest.ends_with("a (2).txt"));
         assert!(planned[2].dest.ends_with("a (3).txt"));
@@ -434,7 +471,7 @@ mod tests {
     #[test]
     fn a_dotfile_keeps_its_leading_dot_and_numbers_after_the_whole_name() {
         let manifest = manifest_with_paths(&[("/", ".bashrc"), ("/", ".bashrc")]);
-        let planned = plan(&manifest, Path::new("/tmp/out"), None);
+        let planned = plan(&manifest, Path::new("/tmp/out"), None, None);
         assert!(planned[0].dest.ends_with(".bashrc"));
         assert!(planned[1].dest.ends_with(".bashrc (2)"));
     }
@@ -449,7 +486,7 @@ mod tests {
     #[test]
     fn only_filters_on_what_the_map_says_not_on_what_lands() {
         let manifest = manifest_with_paths(&[("/photos", "a:b.jpg"), ("/docs", "c.txt")]);
-        let planned = plan(&manifest, Path::new("/tmp/out"), Some("a:b"));
+        let planned = plan(&manifest, Path::new("/tmp/out"), Some("a:b"), None);
         assert_eq!(planned.len(), 1);
         assert_eq!(planned[0].item.name, "a:b.jpg");
     }
@@ -460,20 +497,65 @@ mod tests {
     fn a_quilted_item_is_fetched_by_its_patch() {
         let mut manifest = manifest_with_paths(&[("/", "a.txt")]);
         manifest.items[0].quilt = Some(nmts_crypto::manifest::Quilt {
-            quilt_blob_id: "QUILT".into(),
-            patch_id: "PATCH".into(),
+            quilt_blob_id: Some("QUILT".into()),
+            patch_id: Some("PATCH".into()),
+            identifier: None,
         });
-        let planned = plan(&manifest, Path::new("/tmp/out"), None);
+        let planned = plan(&manifest, Path::new("/tmp/out"), None, None);
         let refs = planned[0].refs().expect("a known network");
         assert_eq!(refs[0].0, BlobRef::Patch("PATCH".into()));
+    }
+
+    /// An item the list places in its OWN bundle is fetched from the bundle the list came from,
+    /// by the name the writer gave it (NRM-3).
+    ///
+    /// This is the half of a recovery that would otherwise be lost silently: those are the files
+    /// from the very upload the list rode along with, and for somebody who uploaded once and never
+    /// again they are ALL of the files.
+    #[test]
+    fn an_item_in_the_lists_own_bundle_is_fetched_from_that_bundle() {
+        let mut manifest = manifest_with_paths(&[("/", "a.txt")]);
+        manifest.items[0].parts[0].blob_id = None;
+        manifest.items[0].quilt = Some(nmts_crypto::manifest::Quilt {
+            quilt_blob_id: None,
+            patch_id: None,
+            identifier: Some("NAME".into()),
+        });
+        let planned = plan(&manifest, Path::new("/tmp/out"), None, Some("FOUND-IN"));
+        let refs = planned[0].refs().expect("a bundle is known");
+        assert_eq!(
+            refs[0].0,
+            BlobRef::InQuilt {
+                quilt_id: "FOUND-IN".into(),
+                identifier: "NAME".into()
+            }
+        );
+    }
+
+    /// ⛔ The same item, in a list read from a FILE, is refused rather than fetched.
+    ///
+    /// Nothing in a file says which bundle it was stored in, so there is no bundle to resolve
+    /// against. The tempting guess — any bundle the account owns — would hand back somebody
+    /// else's ciphertext and fail as "damaged", which is the wrong story entirely.
+    #[test]
+    fn the_same_item_read_from_a_file_says_so_instead_of_guessing() {
+        let mut manifest = manifest_with_paths(&[("/", "a.txt")]);
+        manifest.items[0].parts[0].blob_id = None;
+        manifest.items[0].quilt = Some(nmts_crypto::manifest::Quilt {
+            quilt_blob_id: None,
+            patch_id: None,
+            identifier: Some("NAME".into()),
+        });
+        let planned = plan(&manifest, Path::new("/tmp/out"), None, None);
+        assert_eq!(planned[0].refs(), Err(RefProblem::OwnQuiltUnknown));
     }
 
     #[test]
     fn a_network_this_build_does_not_know_is_refused_rather_than_guessed() {
         let mut manifest = manifest_with_paths(&[("/", "a.txt")]);
         manifest.items[0].parts[0].network = Some("something-else".into());
-        let planned = plan(&manifest, Path::new("/tmp/out"), None);
-        assert!(planned[0].refs().is_none());
+        let planned = plan(&manifest, Path::new("/tmp/out"), None, None);
+        assert_eq!(planned[0].refs(), Err(RefProblem::UnknownNetwork));
     }
 
     fn manifest_with_paths(specs: &[(&str, &str)]) -> RecoveryManifest {
@@ -496,7 +578,7 @@ mod tests {
                     content_hash: None,
                     parts: vec![nmts_crypto::manifest::Part {
                         part_index: Some(0),
-                        blob_id: format!("blob-{i}"),
+                        blob_id: Some(format!("blob-{i}")),
                         plaintext_len: 0,
                         network: None,
                         sui_object_id: None,

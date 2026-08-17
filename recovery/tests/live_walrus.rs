@@ -4,7 +4,7 @@
 //! checks but not the part nobody can synthesise: that the URLs this program builds are the URLs a
 //! real Walrus aggregator answers. This test stores a real blob on Walrus **testnet** through the
 //! public publisher (Mysten-sponsored — no wallet, no coins, nothing spent), then recovers it with
-//! nothing but an account code, a map file, and a public aggregator.
+//! nothing but an account code, a list file, and a public aggregator.
 //!
 //! # Running it
 //! ```text
@@ -71,7 +71,7 @@ fn a_real_blob_on_walrus_comes_back_as_the_original_file() {
     };
     eprintln!("stored on Walrus testnet as blob {blob_id}");
 
-    // The map: what a person would have saved from NMTS.
+    // The list: what a person would have saved from NMTS.
     let manifest = RecoveryManifest {
         v: 2,
         seq: 1,
@@ -88,7 +88,7 @@ fn a_real_blob_on_walrus_comes_back_as_the_original_file() {
             content_hash: Some(b64::encode(&sha256(&plaintext))),
             parts: vec![Part {
                 part_index: Some(0),
-                blob_id: blob_id.clone(),
+                blob_id: Some(blob_id.clone()),
                 plaintext_len: plaintext.len() as u64,
                 network: Some("walrus".into()),
                 sui_object_id: None,

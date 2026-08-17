@@ -3,7 +3,7 @@
 //! # English is what it says unless asked otherwise
 //! The tool exists for the day NMTS is gone. On that day the person running it may be the account
 //! holder, or it may be someone helping them — a friend, a relative, whoever ends up holding the
-//! drive. Which of those two reads Korean is not something the moment of saving the map could
+//! drive. Which of those two reads Korean is not something the moment of saving the list could
 //! know, so the default is the one more people can read, and `--lang ko` (or the toggle in the
 //! control window) switches it. Nothing is auto-detected: a program whose output changes with a
 //! machine's locale is a program whose output cannot be quoted in a bug report.
@@ -49,43 +49,43 @@ pub const CODE_MALFORMED: Line = Line(
 );
 
 pub const CODE_WRONG_ACCOUNT: Line = Line(
-    "This account code does not belong to this recovery map. The code is valid, but it identifies \
-     a different account. Check that you are using the map file saved from this account.",
-    "이 계정 코드는 이 복구 지도의 것이 아닙니다. 코드 자체는 올바르지만 다른 계정을 가리킵니다. \
-     이 계정에서 저장한 지도 파일이 맞는지 확인하십시오.",
+    "This account code does not belong to this recovery list. The code is valid, but it identifies \
+     a different account. Check that you are using the file saved from this account.",
+    "이 계정 코드는 이 복구 목록의 것이 아닙니다. 코드 자체는 올바르지만 다른 계정을 가리킵니다. \
+     이 계정에서 저장한 파일이 맞는지 확인하십시오.",
 );
 
 pub const MAP_NOT_A_MAP: Line = Line(
-    "This file is not an NMTS recovery map.",
-    "이 파일은 NMTS 복구 지도가 아닙니다.",
+    "This file is not an NMTS recovery list.",
+    "이 파일은 NMTS 복구 목록이 아닙니다.",
 );
 
 pub const MAP_WILL_NOT_OPEN: Line = Line(
-    "The recovery map would not open. The account code is right for this account, so the map file \
+    "The recovery list would not open. The account code is right for this account, so the file \
      itself has been changed or damaged since it was saved.",
-    "복구 지도가 열리지 않았습니다. 계정 코드는 이 계정의 것이 맞으므로, 지도 파일 자체가 저장된 \
+    "복구 목록이 열리지 않았습니다. 계정 코드는 이 계정의 것이 맞으므로, 파일 자체가 저장된 \
      뒤에 바뀌었거나 손상된 것입니다.",
 );
 
 pub const MAP_TOO_NEW: Line = Line(
-    "This map was written in a newer format than this build understands. Use a newer \
+    "This list was written in a newer format than this build understands. Use a newer \
      nmts-recovery; nothing was read.",
-    "이 지도는 이 판이 아는 것보다 새로운 형식으로 쓰였습니다. 더 새로운 nmts-recovery를 쓰십시오. \
-     아무것도 읽지 않았습니다.",
+    "이 복구 목록은 이 판이 아는 것보다 새로운 형식으로 쓰였습니다. 더 새로운 nmts-recovery를 \
+     쓰십시오. 아무것도 읽지 않았습니다.",
 );
 
 pub const MAP_SEQ_DISAGREES: Line = Line(
-    "This file's header and the sealed map inside it disagree about which map this is. The sealed \
-     one was used; the header is the part anyone holding the file could have edited",
-    "이 파일의 겉면과 그 안에 봉인된 지도가 서로 다른 번호를 말합니다. 봉인된 쪽을 썼습니다. \
+    "This file's header and the sealed list inside it disagree about which list this is. The \
+     sealed one was used; the header is the part anyone holding the file could have edited",
+    "이 파일의 겉면과 그 안에 봉인된 목록이 서로 다른 번호를 말합니다. 봉인된 쪽을 썼습니다. \
      겉면은 파일을 가진 사람이면 누구나 고칠 수 있는 자리입니다",
 );
 
-pub const SUMMARY_HEAD: Line = Line("This map covers:", "이 지도가 담고 있는 것:");
+pub const SUMMARY_HEAD: Line = Line("This list covers:", "이 복구 목록이 담고 있는 것:");
 
 pub const NOTHING_MATCHED: Line = Line(
-    "Nothing in this map matches --only.",
-    "--only 에 해당하는 것이 이 지도에 없습니다.",
+    "Nothing in this list matches --only.",
+    "--only 에 해당하는 것이 이 복구 목록에 없습니다.",
 );
 
 pub const FETCH_PLAN_HEAD: Line = Line(
@@ -96,8 +96,8 @@ pub const FETCH_PLAN_HEAD: Line = Line(
 pub const RESTORE_HEAD: Line = Line("Restoring:", "되찾는 중:");
 
 pub const DONE_ALL: Line = Line(
-    "Done. Every file in the map was restored and its contents verified.",
-    "끝났습니다. 지도에 있는 파일을 모두 되찾았고 내용까지 확인했습니다.",
+    "Done. Every file in the list was restored and its contents verified.",
+    "끝났습니다. 복구 목록에 있는 파일을 모두 되찾았고 내용까지 확인했습니다.",
 );
 
 pub const DONE_PARTIAL: Line = Line(
@@ -119,12 +119,64 @@ pub const UNKNOWN_NETWORK: Line = Line(
     "이 판이 읽을 수 없는 저장망에 있습니다",
 );
 
+// ── Looking the list up on the storage network ───────────────────────────────────────────────
+
+pub const FIND_LOOKING: Line = Line(
+    "Looking for your recovery list on the storage network. Your account code stays here; what \
+     goes out is a question about these public addresses:",
+    "저장망에서 복구 목록을 찾고 있습니다. 계정 코드는 이 기계 밖으로 나가지 않고, 밖으로 나가는 \
+     것은 아래 공개 주소에 대한 물음뿐입니다:",
+);
+
+pub const FIND_FOUND: Line = Line("Found it in bundle", "찾았습니다 — 꾸러미");
+
+pub const FIND_SEQ: Line = Line("list number", "목록 번호");
+
+pub const FIND_UNDER: Line = Line("held by", "가진 주소");
+
+pub const FIND_BUNDLES_SEEN: Line = Line("bundles were checked", "개의 꾸러미를 확인했습니다");
+
+pub const FIND_NOTHING: Line = Line(
+    "No recovery list was found on the storage network for this account code. Three things make \
+     that normal rather than alarming: the account may never have turned the storage-network copy \
+     on; the uploads may have been paid for by a browser-extension wallet or an imported key, \
+     whose address an account code cannot derive — pass it with --owner; or the account may hold \
+     only large files, which are stored on their own rather than in bundles. A recovery list file \
+     you saved, or a recovery kit, still works: pass it with --map.",
+    "이 계정 코드로는 저장망에서 복구 목록을 찾지 못했습니다. 놀랄 일이 아닌 경우가 셋입니다. \
+     저장망 사본을 켠 적이 없거나, 확장 프로그램 지갑이나 가져온 개인 키로 저장 비용을 냈거나 \
+     (그 주소는 계정 코드로 계산할 수 없습니다 — --owner 로 알려 주십시오), 큰 파일만 있어서 \
+     꾸러미가 아니라 따로 올라가 있는 경우입니다. 저장해 두신 복구 목록 파일이나 복구 키트가 \
+     있으면 --map 으로 그대로 쓰실 수 있습니다.",
+);
+
+pub const FIND_LIST_NAME: Line = Line(
+    "the list stored on the storage network",
+    "저장망에 있는 복구 목록",
+);
+
+pub const FIND_TRUNCATED: Line = Line(
+    "This address holds more objects than one search walks through, so bundles may have been \
+     missed. If nothing was found, say --map and use a saved file instead.",
+    "이 주소가 가진 물건이 한 번의 검색이 훑는 것보다 많아서, 못 본 꾸러미가 있을 수 있습니다. \
+     아무것도 못 찾았다면 --map 으로 저장해 두신 파일을 쓰십시오.",
+);
+
+pub const OWN_QUILT_UNKNOWN: Line = Line(
+    "is stored in the bundle this recovery list itself came from, and this list was read from a \
+     file, so there is nothing here that says which bundle that was. Run this again pointing at \
+     the account code instead of the file, and the list will be found where it is stored.",
+    "이 복구 목록이 실려 있던 꾸러미 안에 있습니다. 그런데 이 목록은 파일에서 읽었고, 파일에는 \
+     그것이 어느 꾸러미였는지가 적혀 있지 않습니다. 파일 대신 계정 코드로 다시 실행하시면 목록을 \
+     그것이 저장된 자리에서 찾습니다.",
+);
+
 pub const PART_PLACEMENT_UNVERIFIABLE: Line = Line(
-    "note: this map is an older version that did not record where each piece belongs, so the \
-     order of the pieces is the map's claim and could not be checked against the pieces \
+    "note: this list is an older version that did not record where each piece belongs, so the \
+     order of the pieces is what the list claims and could not be checked against the pieces \
      themselves.",
-    "참고: 이 지도는 조각의 자리를 기록하지 않던 옛 판이라, 조각의 순서는 지도의 주장일 뿐 조각 \
-     자체와 대조하지 못했습니다.",
+    "참고: 이 복구 목록은 조각의 자리를 기록하지 않던 옛 판이라, 조각의 순서는 목록의 주장일 뿐 \
+     조각 자체와 대조하지 못했습니다.",
 );
 
 // ── The control window ────────────────────────────────────────────────────────────────────────
@@ -150,15 +202,15 @@ pub const GUI_OPENED: Line = Line(
 );
 
 pub const GUI_ASK_IN_TERMINAL: Line = Line(
-    "The window has handed over a recovery map. It needs your account code now, and it is asking \
+    "The window has handed over a recovery list. It needs your account code now, and it is asking \
      here rather than in the browser on purpose.",
-    "화면에서 복구 지도를 넘겨받았습니다. 이제 계정 코드가 필요한데, 브라우저가 아니라 여기서 묻는 \
+    "화면에서 복구 목록을 넘겨받았습니다. 이제 계정 코드가 필요한데, 브라우저가 아니라 여기서 묻는 \
      것은 일부러 그렇게 한 것입니다.",
 );
 
 pub const GUI_MAP_OPEN: Line = Line(
-    "The map is open. Go back to the browser window.",
-    "지도가 열렸습니다. 브라우저 화면으로 돌아가십시오.",
+    "The list is open. Go back to the browser window.",
+    "복구 목록이 열렸습니다. 브라우저 화면으로 돌아가십시오.",
 );
 
 pub const GUI_CLOSED: Line = Line(
@@ -279,6 +331,15 @@ pub const ALL_LINES: &[Line] = &[
     DONE_PARTIAL,
     NO_HASH_NOTE,
     UNKNOWN_NETWORK,
+    OWN_QUILT_UNKNOWN,
+    FIND_LOOKING,
+    FIND_FOUND,
+    FIND_SEQ,
+    FIND_UNDER,
+    FIND_BUNDLES_SEEN,
+    FIND_NOTHING,
+    FIND_TRUNCATED,
+    FIND_LIST_NAME,
     PART_PLACEMENT_UNVERIFIABLE,
     GUI_HEAD,
     GUI_LOCAL_ONLY,

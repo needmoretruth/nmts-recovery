@@ -3,7 +3,7 @@
 //! # What has to be proven here
 //! Two separate things, and they fail in different ways:
 //!
-//! 1. **The recovery still happens.** A map handed over by the page and a set of ticked rows must
+//! 1. **The recovery still happens.** A list handed over by the page and a set of ticked rows must
 //!    put the same bytes on the disk that the terminal path puts there. If this were only tested
 //!    by looking at JSON, the window could report a perfect success over an empty folder.
 //! 2. **Nothing else on the machine can drive it.** A loopback server is reachable by every
@@ -182,10 +182,10 @@ fn speak(port: u16, request: &[u8]) -> Answer {
     Answer { status, head, body }
 }
 
-/// A fixture with two files in it and a map that covers both.
+/// A fixture with two files in it and a list that covers both.
 fn two_files() -> (Fixture, Vec<u8>, Vec<u8>) {
     let fx = Fixture::new();
-    let letter = b"the map is the index, and the code is the key".to_vec();
+    let letter = b"the list is the index, and the code is the key".to_vec();
     // Big enough to cross the tool's read chunk more than once, so the progress path is exercised
     // rather than skipped by a file that arrives in one go.
     let big: Vec<u8> = (0..900_000u32).map(|i| (i.wrapping_mul(37) % 251) as u8).collect();
@@ -197,7 +197,7 @@ fn two_files() -> (Fixture, Vec<u8>, Vec<u8>) {
 
 // ── 1. The recovery still happens ─────────────────────────────────────────────────────────────
 
-/// The claim, through the window: choose a map, tick the rows, and the files are on the disk.
+/// The claim, through the window: choose a list, tick the rows, and the files are on the disk.
 #[test]
 fn the_window_gives_the_files_back() {
     let (fx, letter, big) = two_files();
@@ -213,7 +213,7 @@ fn the_window_gives_the_files_back() {
         "/api/map",
         &serde_json::json!({ "name": "map.nmtsmap", "text": map_text }).to_string(),
     );
-    assert_eq!(sent.status, 200, "the map was refused: {}", sent.body);
+    assert_eq!(sent.status, 200, "the list was refused: {}", sent.body);
 
     // The account code came from --code-file, so the program walks through "need-code" on its own.
     let ready = w.wait_for("ready");
@@ -288,7 +288,7 @@ fn the_terminal_never_prints_the_account_code() {
         said.contains("never in the browser"),
         "the terminal never said where the code goes: {said}"
     );
-    assert!(said.contains("The map is open"), "the terminal never said the map opened: {said}");
+    assert!(said.contains("The list is open"), "the terminal never said the list opened: {said}");
 }
 
 /// Ticking one row restores one file. The other must not appear — a control window that quietly
@@ -311,7 +311,7 @@ fn only_the_ticked_rows_are_written() {
         .expect("items")
         .iter()
         .position(|i| i["name"] == "letter.txt")
-        .expect("the letter is in the map");
+        .expect("the letter is in the list");
 
     let out = fx.path("out");
     w.post(
@@ -325,7 +325,7 @@ fn only_the_ticked_rows_are_written() {
     assert!(!out.join("big.bin").exists(), "an unticked file was written anyway");
 }
 
-/// A map that will not open leaves the window able to try another one, rather than dead.
+/// A list that will not open leaves the window able to try another one, rather than dead.
 #[test]
 fn a_file_that_is_not_a_map_is_said_so_and_the_window_carries_on() {
     let (fx, _, _) = two_files();
@@ -345,7 +345,7 @@ fn a_file_that_is_not_a_map_is_said_so_and_the_window_carries_on() {
         thread::sleep(Duration::from_millis(100));
     }
     let note = note.expect("the window never said what was wrong");
-    assert!(note.contains("not an NMTS recovery map"), "{note}");
+    assert!(note.contains("not an NMTS recovery list"), "{note}");
 }
 
 /// Asking for nothing is refused before anything is written, and the message says what to do.

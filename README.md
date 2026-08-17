@@ -41,7 +41,7 @@ Stated plainly, because a recovery tool that oversells itself is worse than none
 * **It cannot recover anything you deleted.** Deleting a file in NMTS destroys its key, and the
   key is what this program needs.
 * **It cannot prove a blob is still stored.** It finds out by fetching it.
-* **It cannot tell you which Walrus network a list refers to.** An NRM-2 map records the storage
+* **It cannot tell you which Walrus network a list refers to.** An NRM-2 list records the storage
   network by name (`walrus`) and does not say mainnet or testnet, so both are tried in that order.
   `--aggregator` overrides this.
 

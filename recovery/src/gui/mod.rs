@@ -13,7 +13,7 @@
 //! on a personal machine: extensions can read any page's contents, password managers offer to
 //! remember what looks like a credential, and form values outlive the tab. The account code is the
 //! master secret for an account — every key in NMTS derives from it — so it does not go near any of
-//! that. When the page has handed over a map file, this program asks for the code on the terminal
+//! that. When the page has handed over a list file, this program asks for the code on the terminal
 //! it was started from, and the page says to look there.
 //!
 //! # Why a page on this machine can be trusted at all
@@ -77,11 +77,11 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(60);
 /// Where the session is in the one sequence it can be in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
-    /// Waiting for the browser to hand over a recovery map.
+    /// Waiting for the browser to hand over a recovery list.
     NeedMap,
-    /// The map is readable and the terminal is asking for the account code.
+    /// The list is readable and the terminal is asking for the account code.
     NeedCode,
-    /// The map is open. The page is showing what it holds.
+    /// The list is open. The page is showing what it holds.
     Ready,
     /// Files are being fetched and written.
     Restoring,
@@ -140,6 +140,13 @@ struct Session {
     generated_at: String,
     items: Vec<ItemView>,
     manifest: Option<RecoveryManifest>,
+    /// Blob id of the bundle the open list was READ from, when it was found on the network.
+    ///
+    /// Reader's knowledge, not the document's: a list found on the storage network describes the
+    /// files it rode along with as "in the bundle you found me in" (NRM-3), and this is that
+    /// bundle. `None` for a list opened from a file, which is what makes such an item report
+    /// itself as unresolvable instead of being fetched from somewhere plausible.
+    own_quilt: Option<String>,
     out: String,
     job: Job,
 }
@@ -156,6 +163,7 @@ impl Session {
             generated_at: String::new(),
             items: Vec::new(),
             manifest: None,
+            own_quilt: None,
             out,
             job: Job::default(),
         }
@@ -203,6 +211,18 @@ enum Event {
 
 /// Serve the control window until the page says it is done.
 pub fn run(a: &Args) -> Result<ExitCode, String> {
+    run_with(a, None)
+}
+
+/// The control window, optionally starting from a list that was already FOUND on the network.
+///
+/// `seed` is `(the opened list, the bundle it came out of, what to call it on screen)`. When it is
+/// present the account code has already been typed, so the page opens with the list open rather
+/// than asking for a file first.
+pub fn run_with(
+    a: &Args,
+    seed: Option<(RecoveryManifest, String, String)>,
+) -> Result<ExitCode, String> {
     let lang = a.lang;
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, a.port.unwrap_or(0)))
         .map_err(|e| format!("{} ({e})", msg::GUI_NO_PORT.get(lang)))?;
@@ -246,7 +266,11 @@ pub fn run(a: &Args) -> Result<ExitCode, String> {
     }
     let _ = std::io::stdout().flush();
 
-    // A map named on the command line skips the first screen. The code is still asked for here.
+    if let Some((manifest, quilt_id, name)) = seed {
+        seed_from_network(&shared, manifest, quilt_id, name);
+    }
+
+    // A list named on the command line skips the first screen. The code is still asked for here.
     if !a.map.as_os_str().is_empty() {
         let name = a
             .map
@@ -275,7 +299,7 @@ pub fn run(a: &Args) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Parse a wrapper, ask for the code on the terminal, open the map. Runs on the main thread.
+/// Parse a wrapper, ask for the code on the terminal, open the list. Runs on the main thread.
 fn open_map(shared: &Arc<Mutex<Session>>, name: &str, text: &str, a: &Args) {
     let lang = current_lang(shared);
     let fail = |note: String| {
@@ -331,7 +355,7 @@ fn open_map(shared: &Arc<Mutex<Session>>, name: &str, text: &str, a: &Args) {
         Ok(b) => b,
         Err(_) => {
             return fail(format!(
-                "{} — the sealed map is not readable.",
+                "{} — the sealed list is not readable.",
                 msg::MAP_NOT_A_MAP.get(lang)
             ))
         }
@@ -365,8 +389,43 @@ fn open_map(shared: &Arc<Mutex<Session>>, name: &str, text: &str, a: &Args) {
     s.seq = manifest.seq;
     s.generated_at = manifest.generated_at.clone();
     s.manifest = Some(manifest);
+    // Cleared, not left over: a second list opened from a file after one was found on the network
+    // must not inherit the network one's bundle. That would resolve an own-quilt item against a
+    // bundle it has nothing to do with, and fetch a stranger's bytes.
+    s.own_quilt = None;
     s.phase = Phase::Ready;
     s.note = note;
+}
+
+/// Fill the session from a list that was FOUND on the storage network, ready to restore.
+///
+/// The account code has already been typed by the time this runs, so there is no `NeedCode` phase
+/// to pass through — the page opens with the list already open.
+fn seed_from_network(
+    shared: &Arc<Mutex<Session>>,
+    manifest: RecoveryManifest,
+    quilt_id: String,
+    name: String,
+) {
+    let mut s = session(shared);
+    s.items = manifest
+        .items
+        .iter()
+        .map(|i| ItemView {
+            name: i.name.clone(),
+            path: i.path.clone(),
+            size: i.size,
+            parts: i.parts.len(),
+        })
+        .collect();
+    s.seq = manifest.seq;
+    s.generated_at = manifest.generated_at.clone();
+    s.map_name = Some(name);
+    s.account_id = Some(manifest.account_id.clone());
+    s.manifest = Some(manifest);
+    s.own_quilt = Some(quilt_id);
+    s.phase = Phase::Ready;
+    s.note = None;
 }
 
 /// Accept connections until the process ends.
@@ -528,12 +587,12 @@ fn api(
                 .unwrap_or("map")
                 .to_string();
             let Some(text) = doc.get("text").and_then(Value::as_str) else {
-                bad(stream, "no map contents were sent");
+                bad(stream, "no list contents were sent");
                 return;
             };
             {
                 let s = session(shared);
-                // The main thread is at a prompt; a second map now would queue behind it and be
+                // The main thread is at a prompt; a second list now would queue behind it and be
                 // opened with a code that was typed for the first one.
                 if s.phase == Phase::NeedCode || s.phase == Phase::Restoring {
                     busy(stream);
@@ -610,7 +669,7 @@ fn start_restore(shared: &Arc<Mutex<Session>>, doc: &Value, a: &Args) -> Result<
         if s.phase == Phase::Restoring {
             return Err(msg::GUI_ALREADY_RUNNING.get(lang).to_string());
         }
-        let manifest = s.manifest.as_ref().ok_or_else(|| "no map is open".to_string())?;
+        let manifest = s.manifest.as_ref().ok_or_else(|| "no list is open".to_string())?;
         let mut subset = manifest.clone();
         subset.items = picked
             .iter()
@@ -630,11 +689,12 @@ fn start_restore(shared: &Arc<Mutex<Session>>, doc: &Value, a: &Args) -> Result<
         subset
     };
 
+    let own_quilt = session(shared).own_quilt.clone();
     let shared = Arc::clone(shared);
     let a = a.clone();
     thread::Builder::new()
         .name("nmts-recovery-restore".to_string())
-        .spawn(move || run_restore(shared, subset, PathBuf::from(out), overwrite, a))
+        .spawn(move || run_restore(shared, subset, own_quilt, PathBuf::from(out), overwrite, a))
         .map_err(|e| format!("{e}"))?;
     Ok(())
 }
@@ -643,6 +703,7 @@ fn start_restore(shared: &Arc<Mutex<Session>>, doc: &Value, a: &Args) -> Result<
 fn run_restore(
     shared: Arc<Mutex<Session>>,
     manifest: RecoveryManifest,
+    own_quilt: Option<String>,
     out: PathBuf,
     overwrite: bool,
     a: Args,
@@ -652,7 +713,7 @@ fn run_restore(
         Some(dir) => Box::new(DirSource::new(dir)),
         None => Box::new(HttpSource::new(a.aggregators.clone())),
     };
-    let planned = restore::plan(&manifest, &out, None);
+    let planned = restore::plan(&manifest, &out, None, own_quilt.as_deref());
 
     for p in &planned {
         let label = format!("{}/{}", p.item.path.trim_end_matches('/'), p.item.name);

@@ -3,7 +3,7 @@ name = "nmts-recovery"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
-description = "Recover files uploaded with NMTS using only an account code, a recovery map, and a public Walrus aggregator. No NMTS server is contacted."
+description = "Recover files uploaded with NMTS using only an account code, a recovery list, and a public Walrus aggregator. No NMTS server is contacted."
 license = "AGPL-3.0-only"
 publish = false
 
@@ -21,11 +21,11 @@ path = "src/main.rs"
 #    nobody asked for, and the first place a mistake would hide.
 nmts-crypto = { path = "../crypto" }
 
-# The recovery map is JSON; so is the `.nmtsmap` wrapper around it.
+# The recovery list is JSON; so is the `.nmtsmap` wrapper around it.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# SHA-256, to check a reassembled file against the hash the map recorded. Already in the tree —
+# SHA-256, to check a reassembled file against the hash the list recorded. Already in the tree —
 # `nmts-crypto` uses it for HKDF — so this adds a name here and nothing to the dependency graph.
 sha2 = "0.10"
 
@@ -38,7 +38,7 @@ sha2 = "0.10"
 #
 # `default-features = false` drops gzip: a blob is ciphertext, so there is nothing in it to
 # compress, and a decompressor on this path would only add a way for a response to expand into
-# more memory than the map said to expect. `rustls` brings its own bundled root certificates, so
+# more memory than the list said to expect. `rustls` brings its own bundled root certificates, so
 # the tool does not depend on how the machine it is rescued onto happens to be configured.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 

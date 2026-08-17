@@ -1,4 +1,4 @@
-//! The `.nmtsmap` file: a small self-describing wrapper around one sealed recovery map.
+//! The `.nmtsmap` file: a small self-describing wrapper around one sealed recovery list.
 //!
 //! The shape is `docs/RECOVERY-MANIFEST.md` §5, and NMTS's browser code writes it. Only the
 //! fields this program acts on are read; the rest
@@ -13,8 +13,8 @@
 use serde::Deserialize;
 
 /// The marker every wrapper starts with. Checked before anything else is attempted, so that
-/// "this is not a recovery map" is what a person is told when they point the tool at the wrong
-/// file — rather than a decryption failure, which reads as "your map is damaged".
+/// "this is not a recovery list" is what a person is told when they point the tool at the wrong
+/// file — rather than a decryption failure, which reads as "your list is damaged".
 pub const FORMAT_MARKER: &str = "nmts-recovery-map";
 
 /// The highest wrapper version this build knows how to read.
@@ -28,7 +28,7 @@ pub const MAX_WRAPPER_VERSION: u64 = 2;
 ///
 /// Kept beside the wrapper's own ceiling because the two move independently — NRM-2 shipped
 /// without touching the shell. The check is here rather than in the crypto crate because refusing
-/// early means the account code is never even asked for on a map this build cannot use.
+/// early means the account code is never even asked for on a list this build cannot use.
 pub const MAX_NRM_VERSION: u64 = 2;
 
 /// What the wrapper says before anything is decrypted.
@@ -38,7 +38,7 @@ pub struct MapFile {
     pub version: u64,
     /// NRM version of the document sealed inside.
     pub nrm: u64,
-    /// Which map this is. Higher wins when someone holds several.
+    /// Which list this is. Higher wins when someone holds several.
     pub seq: u64,
     /// Public account id (base64url of 16 bytes) — NOT a secret, and NOT a key.
     pub account_id: String,
@@ -46,7 +46,7 @@ pub struct MapFile {
     pub sealed: String,
 }
 
-/// Why a file could not be used as a recovery map.
+/// Why a file could not be used as a recovery list.
 #[derive(Debug)]
 pub enum MapFileError {
     /// Not JSON, or not shaped like a wrapper at all.
@@ -58,7 +58,7 @@ pub enum MapFileError {
 /// Read a wrapper, refusing anything that is not one.
 pub fn parse(text: &str) -> Result<MapFile, MapFileError> {
     let doc: MapFile = serde_json::from_str(text)
-        .map_err(|e| MapFileError::NotAMap(format!("the contents are not a recovery map ({e})")))?;
+        .map_err(|e| MapFileError::NotAMap(format!("the contents are not a recovery list ({e})")))?;
     if doc.format != FORMAT_MARKER {
         return Err(MapFileError::NotAMap(format!(
             "the format marker says \"{}\"",
@@ -67,7 +67,7 @@ pub fn parse(text: &str) -> Result<MapFile, MapFileError> {
     }
     if doc.sealed.is_empty() {
         return Err(MapFileError::NotAMap(
-            "it carries no sealed map".to_string(),
+            "it carries no sealed list".to_string(),
         ));
     }
     if doc.version > MAX_WRAPPER_VERSION || doc.nrm > MAX_NRM_VERSION {
@@ -97,7 +97,7 @@ mod tests {
     }
 
     /// v1 wrote `note` as a single string. The field is not read, so the version difference must
-    /// cost nothing — a person holding a two-year-old map file is exactly who this tool is for.
+    /// cost nothing — a person holding a two-year-old list file is exactly who this tool is for.
     #[test]
     fn reads_a_v1_wrapper_whose_note_is_a_bare_string() {
         let v1 = V2

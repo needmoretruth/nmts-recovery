@@ -8,7 +8,7 @@
   tell apart from any other page loaded from a file, so it is not admitted.
 
   What this page is allowed to do, and what it is not:
-    * It shows what your recovery map holds and sends back which files you ticked.
+    * It shows what your recovery list holds and sends back which files you ticked.
     * It never sees your account code. That is typed in the terminal window, on purpose.
     * It holds no key, decrypts nothing, and writes no file. All of that happens in the program.
 
@@ -152,7 +152,7 @@
     <p class="note" id="note"></p>
   </div>
 
-  <!-- 1. Choose the map. -->
+  <!-- 1. Choose the list. -->
   <section class="panel hidden" id="step-map">
     <h2 id="map-head"></h2>
     <p class="sub" id="map-help"></p>
@@ -168,7 +168,7 @@
     <p class="sub" id="code-why"></p>
   </section>
 
-  <!-- 3. What the map holds, and what to restore. -->
+  <!-- 3. What the list holds, and what to restore. -->
   <section class="panel hidden" id="step-list">
     <h2 id="list-head"></h2>
     <dl class="facts" id="facts"></dl>
@@ -218,15 +218,15 @@
       tagline: "Restore files uploaded with NMTS, without NMTS.",
       offline: "This page does nothing on its own. Run nmts-recovery --gui in a terminal and open the address it prints.",
       toggle: "한국어",
-      mapHead: "1. Choose your recovery map",
+      mapHead: "1. Choose your recovery list",
       mapHelp: "The .nmtsmap file you saved from NMTS. It stays on this machine; nothing is uploaded.",
       codeHead: "2. Type your account code in the terminal",
       codeHelp: "Go to the terminal window that started this program. It is waiting for your account code.",
       codeWhy: "Your account code is never typed into a browser. It is the master key for your account, and a browser page is the one place on this machine that other software can read.",
       listHead: "3. Choose what to restore",
-      factMap: "Map file",
+      factMap: "List file",
       factAccount: "Account",
-      factSeq: "Map number",
+      factSeq: "List number",
       factWhen: "Taken",
       factFiles: "Files",
       filter: "Filter by name or folder",
@@ -252,15 +252,15 @@
       tagline: "NMTS 없이, NMTS에 올린 파일을 되찾습니다.",
       offline: "이 화면은 혼자서는 아무 일도 하지 않습니다. 터미널에서 nmts-recovery --gui 를 실행하고, 거기 찍히는 주소를 여십시오.",
       toggle: "English",
-      mapHead: "1. 복구 지도 파일을 고르십시오",
+      mapHead: "1. 복구 목록 파일을 고르십시오",
       mapHelp: "NMTS에서 저장해 두신 .nmtsmap 파일입니다. 이 기계 밖으로 나가지 않습니다.",
       codeHead: "2. 계정 코드는 터미널에 입력하십시오",
       codeHelp: "이 프로그램을 실행한 터미널 창으로 가십시오. 계정 코드를 기다리고 있습니다.",
       codeWhy: "계정 코드는 브라우저에 입력하지 않습니다. 계정의 모든 열쇠가 거기서 나오는데, 브라우저 화면은 이 기계에서 다른 프로그램이 들여다볼 수 있는 유일한 자리입니다.",
       listHead: "3. 되찾을 것을 고르십시오",
-      factMap: "지도 파일",
+      factMap: "목록 파일",
       factAccount: "계정",
-      factSeq: "지도 번호",
+      factSeq: "목록 번호",
       factWhen: "만든 때",
       factFiles: "파일",
       filter: "이름이나 폴더로 거르기",
@@ -507,7 +507,7 @@
   });
 
   $("again").addEventListener("click", function () {
-    // The program keeps the map open, so going back is a matter of what this page is showing.
+    // The program keeps the list open, so going back is a matter of what this page is showing.
     state.phase = "ready";
     localNote = null;
     draw();
