@@ -317,13 +317,14 @@ years later.
 ```jsonc
 {
   "format": "nmts-recovery-map",   // checked before anything is attempted
-  "version": 1,                    // the WRAPPER's version, independent of `nrm`
+  "version": 2,                    // the WRAPPER's version, independent of `nrm`
   "nrm": 2,                        // NRM version of the sealed document
   "seq": 7,                        // which manifest this is; higher wins
   "generated_at": "<RFC3339>",
   "account_id": "<base64url 16B>", // so several files can be told apart
   "sealed": "<base64url>",         // EXACTLY the envelope a Walrus mirror would hold
-  "note": "<one localized line for whoever finds this file>"
+  "min_tool": "0.1.0",             // lowest nmts-recovery version that reads this document
+  "note": ["<English line>", "<Korean line>"]   // BOTH, always — v2
 }
 ```
 
@@ -335,8 +336,25 @@ years later.
   as well as the body so someone with three of them can tell which is newest without opening any.
 - **`version` stayed at 1 for NRM-2.** The wrapper's own fields did not change; `nrm` is the field that
   says which document version is inside, and moving both together would tell a reader the shell had
-  changed when it had not.
-- Implementation: `nmts/web/src/lib/recovery/map-file.ts`.
+  changed when it had not. It moved to **2 on 2026-08-03**, when `note` became an ARRAY carrying both
+  languages regardless of the UI language the file was saved from — the person who finds this file
+  years later must be able to read it, and which language they read is not something the moment of
+  saving can know.
+- ⭐ **`min_tool` (added 2026-08-19) names the lowest `nmts-recovery` version that reads this
+  document.** It sits BESIDE `nrm` rather than replacing it, because the two answer different
+  questions: `nrm` says which forms the document uses, which is what any reader needs — ours or a
+  stranger's re-implementation — while `min_tool` is what the person holding the file needs, which is
+  a number they can go and download. The refusal is still decided by `nrm`; `min_tool` is quoted back
+  in the sentence so it names a version instead of only saying "newer".
+  ⚠ It is a CLAIM about a different program, not something a reader can verify, and it is written
+  from a small table (`map-file.ts::MIN_TOOL_FOR_NRM`) that has to be kept honest by hand.
+  ⛔ **And it rescues nobody.** Knowing you need 0.2.0 does not help if 0.2.0 does not exist — which
+  is why the standalone program still ships BEFORE a new form is switched on. What it buys is a
+  refusal a person can act on, not one they can survive.
+  ⚠ Adding it did NOT move `version`: a reader that does not know the field ignores it and behaves
+  exactly as before, and bumping the shell would have made every build refuse the file outright.
+- Implementation: `nmts/web/src/lib/recovery/map-file.ts` (writer) ·
+  `nmts/recovery/src/mapfile.rs` (reader, and the one place the refusal sentence is composed).
 
 ## 6. Version history
 

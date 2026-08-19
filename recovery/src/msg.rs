@@ -67,6 +67,14 @@ pub const MAP_WILL_NOT_OPEN: Line = Line(
      뒤에 바뀌었거나 손상된 것입니다.",
 );
 
+/// Said when the list names the version it needs — the actionable half of [`MAP_TOO_NEW`].
+pub const MAP_NEEDS_VERSION: Line = Line(
+    "This list needs nmts-recovery {need} or newer; this is {have}. Newer builds are at \
+     https://github.com/needmoretruth/nmts-recovery — nothing was read.",
+    "이 복구 목록에는 nmts-recovery {need} 이상이 필요합니다. 지금 쓰고 계신 것은 {have}입니다. \
+     새 판은 https://github.com/needmoretruth/nmts-recovery 에 있습니다. 아무것도 읽지 않았습니다.",
+);
+
 pub const MAP_TOO_NEW: Line = Line(
     "This list was written in a newer format than this build understands. Use a newer \
      nmts-recovery; nothing was read.",
@@ -322,6 +330,7 @@ pub const ALL_LINES: &[Line] = &[
     MAP_NOT_A_MAP,
     MAP_WILL_NOT_OPEN,
     MAP_TOO_NEW,
+    MAP_NEEDS_VERSION,
     MAP_SEQ_DISAGREES,
     SUMMARY_HEAD,
     NOTHING_MATCHED,

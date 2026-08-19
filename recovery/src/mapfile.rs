@@ -51,6 +51,24 @@ pub struct MapFile {
     pub account_id: String,
     /// base64url of one NCF-3 envelope.
     pub sealed: String,
+    /// The lowest `nmts-recovery` version that reads this document — written by whoever wrote
+    /// the list, absent in lists written before the field existed.
+    ///
+    /// # Why a program version beside the format version
+    /// [`Self::nrm`] answers "which forms does this document use", which is the right question
+    /// for any reader, ours or a stranger's re-implementation. It is the wrong question for the
+    /// person holding this file during a recovery, whose actual question is "what do I need to
+    /// download". Refusing with "this list is newer than this program" leaves them to work that
+    /// out; refusing with a number they can go and get does not.
+    ///
+    /// ⚠ It is a CLAIM, not a check. This build never compares it against itself — the refusal is
+    /// decided by `nrm`, which is about capability — it only repeats it back so the sentence is
+    /// actionable. A claim is all it can be: the writer is naming a version of a DIFFERENT program.
+    ///
+    /// ⛔ And it does not make an old build work. Knowing you need 0.2.0 does not help if 0.2.0
+    /// does not exist yet, which is why the program still ships before a format is switched on.
+    #[serde(default)]
+    pub min_tool: Option<String>,
 }
 
 /// Why a file could not be used as a recovery list.
@@ -59,7 +77,12 @@ pub enum MapFileError {
     /// Not JSON, or not shaped like a wrapper at all.
     NotAMap(String),
     /// A wrapper, but from a future this build does not know.
-    TooNew { wrapper: u64, nrm: u64 },
+    TooNew {
+        wrapper: u64,
+        nrm: u64,
+        /// What the document says it needs, when it says so — see [`MapFile::min_tool`].
+        min_tool: Option<String>,
+    },
 }
 
 /// Read a wrapper, refusing anything that is not one.
@@ -81,9 +104,29 @@ pub fn parse(text: &str) -> Result<MapFile, MapFileError> {
         return Err(MapFileError::TooNew {
             wrapper: doc.version,
             nrm: doc.nrm,
+            min_tool: doc.min_tool.clone(),
         });
     }
     Ok(doc)
+}
+
+/// The sentence a person reads when a list is ahead of this build.
+///
+/// ⛔ Written HERE, once, because two callers needed it — the terminal and the control window —
+/// and a refusal that says two different things depending on which door you came in is a refusal
+/// nobody can be told to look up. It also sits next to the two ceilings it quotes.
+pub fn too_new_sentence(wrapper: u64, nrm: u64, min_tool: Option<&str>, lang: crate::args::Lang) -> String {
+    // When the list names the version it needs, say THAT: "get 0.2.0" is something a person can
+    // act on, and "this is newer than this program" is not. The format numbers follow either way,
+    // because they are what somebody re-implementing this would need.
+    let head = match min_tool {
+        Some(need) => crate::msg::MAP_NEEDS_VERSION
+            .get(lang)
+            .replace("{need}", need)
+            .replace("{have}", env!("CARGO_PKG_VERSION")),
+        None => crate::msg::MAP_TOO_NEW.get(lang).to_string(),
+    };
+    format!("{head} (wrapper v{wrapper}, NRM v{nrm}; this build reads up to v{MAX_WRAPPER_VERSION} / v{MAX_NRM_VERSION}).")
 }
 
 #[cfg(test)]
@@ -140,6 +183,13 @@ mod tests {
         assert!(matches!(
             parse(&newer_shell),
             Err(MapFileError::TooNew { wrapper, .. }) if wrapper == ahead_shell
+        ));
+        // ⭐ And the refusal carries what the document says it needs, so the sentence a person
+        //    reads can name a version instead of only saying "newer".
+        let with_claim = newer_shell.replace("\"nrm\": 2", "\"nrm\": 2, \"min_tool\": \"9.9.9\"");
+        assert!(matches!(
+            parse(&with_claim),
+            Err(MapFileError::TooNew { ref min_tool, .. }) if min_tool.as_deref() == Some("9.9.9")
         ));
         let ahead_doc = MAX_NRM_VERSION + 1;
         let newer_doc = V2.replace("\"nrm\": 2", &format!("\"nrm\": {ahead_doc}"));

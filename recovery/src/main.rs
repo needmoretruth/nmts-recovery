@@ -291,12 +291,9 @@ fn parse_list(raw: &str, lang: Lang) -> Result<mapfile::MapFile, String> {
         Err(mapfile::MapFileError::NotAMap(why)) => {
             Err(format!("{} — {why}.", msg::MAP_NOT_A_MAP.get(lang)))
         }
-        Err(mapfile::MapFileError::TooNew { wrapper, nrm }) => Err(format!(
-            "{} (wrapper v{wrapper}, NRM v{nrm}; this build reads up to v{} / v{}).",
-            msg::MAP_TOO_NEW.get(lang),
-            mapfile::MAX_WRAPPER_VERSION,
-            mapfile::MAX_NRM_VERSION
-        )),
+        Err(mapfile::MapFileError::TooNew { wrapper, nrm, min_tool }) => Err(
+            mapfile::too_new_sentence(wrapper, nrm, min_tool.as_deref(), lang),
+        ),
     }
 }
 

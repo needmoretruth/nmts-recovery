@@ -316,13 +316,8 @@ fn open_map(shared: &Arc<Mutex<Session>>, name: &str, text: &str, a: &Args) {
         Err(mapfile::MapFileError::NotAMap(why)) => {
             return fail(format!("{} — {why}.", msg::MAP_NOT_A_MAP.get(lang)))
         }
-        Err(mapfile::MapFileError::TooNew { wrapper, nrm }) => {
-            return fail(format!(
-                "{} (wrapper v{wrapper}, NRM v{nrm}; this build reads up to v{} / v{}).",
-                msg::MAP_TOO_NEW.get(lang),
-                mapfile::MAX_WRAPPER_VERSION,
-                mapfile::MAX_NRM_VERSION
-            ))
+        Err(mapfile::MapFileError::TooNew { wrapper, nrm, min_tool }) => {
+            return fail(mapfile::too_new_sentence(wrapper, nrm, min_tool.as_deref(), lang))
         }
     };
 
