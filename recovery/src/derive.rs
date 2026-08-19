@@ -123,16 +123,22 @@ mod tests {
         (
             "0000000000000000000000000000000000000000000000000000000000000000",
             "0x7a1378aafadef8ce743b72e8b248295c8f61c102c94040161146ea4d51a182b6",
+            // Not a secret: a conformance vector built from a fixed seed, holding nothing.
+            // nmts-secret-scan: allow
             "suiprivkey1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq509duq",
         ),
         (
             "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
             "0x7573c697fa68450f04fa0dee2d39dcdc8a5ccf5db547f3e47638a6f8eeeec110",
+            // Not a secret: a conformance vector built from a fixed seed, holding nothing.
+            // nmts-secret-scan: allow
             "suiprivkey1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqa4ffsr",
         ),
         (
             "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
             "0x20a33b9a86e89aa22b4c6f7e4c53e8a37444c92a6f18a28bdbd7a37ba85e0646",
+            // Not a secret: a conformance vector built from a fixed seed, holding nothing.
+            // nmts-secret-scan: allow
             "suiprivkey1qrllllllllllllllllllllllllllllllllllllllllllllllllll7q9367r",
         ),
     ];
