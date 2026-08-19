@@ -78,6 +78,9 @@ fn a_real_blob_on_walrus_comes_back_as_the_original_file() {
         prev_manifest_blob_id: None,
         generated_at: "2026-08-17T10:00:00Z".into(),
         account_id: keys.account_id_b64(),
+        // The live gate proves the network path, not the self-description; absence is what a list
+        // written before the self-description was added looks like and it must keep working.
+        meta: None,
         items: vec![Item {
             id: "live-1".into(),
             name: "proof.bin".into(),
@@ -85,6 +88,8 @@ fn a_real_blob_on_walrus_comes_back_as_the_original_file() {
             size: plaintext.len() as u64,
             dek: b64::encode(&*dek),
             kind: "file".into(),
+            created_at: None,
+            updated_at: None,
             content_hash: Some(b64::encode(&sha256(&plaintext))),
             parts: vec![Part {
                 part_index: Some(0),

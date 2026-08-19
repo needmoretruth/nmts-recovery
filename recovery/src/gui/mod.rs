@@ -706,7 +706,13 @@ fn run_restore(
     let lang = current_lang(&shared);
     let source: Box<dyn BlobSource> = match &a.blobs_dir {
         Some(dir) => Box::new(DirSource::new(dir)),
-        None => Box::new(HttpSource::new(a.aggregators.clone())),
+        // ⛔ The SAME decision the terminal makes, from the same function: which endpoints to ask
+        //    now depends on what the sealed list says about its chain (owner directive, 2026-08-19), and a second copy
+        //    of that rule here is how one door learns something the other never does.
+        None => Box::new(HttpSource::new(crate::source::endpoints_for(
+            &a.aggregators,
+            &manifest,
+        ))),
     };
     let planned = restore::plan(&manifest, &out, None, own_quilt.as_deref());
 
@@ -734,6 +740,7 @@ fn run_restore(
                             msg::PART_PLACEMENT_UNVERIFIABLE.get(lang)
                         }
                         restore::Note::NoContentHash => msg::NO_HASH_NOTE.get(lang),
+                        restore::Note::DateNotRestored => msg::DATE_NOT_RESTORED.get(lang),
                     };
                     s.job.lines.push(format!("   {text}"));
                 }

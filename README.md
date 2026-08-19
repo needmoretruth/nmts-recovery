@@ -43,9 +43,12 @@ Stated plainly, because a recovery tool that oversells itself is worse than none
 * **It cannot recover anything you deleted.** Deleting a file in NMTS destroys its key, and the
   key is what this program needs.
 * **It cannot prove a blob is still stored.** It finds out by fetching it.
-* **It cannot tell you which Walrus network a list refers to.** A recovery list records the storage
-  network by name (`walrus`) and does not say mainnet or testnet, so both are tried in that order.
-  `--aggregator` overrides this.
+* **A list written before 2026-08-19 does not say which Walrus network it refers to.** It records
+  the storage network by name (`walrus`), and mainnet and testnet blob ids look alike, so both
+  aggregators are tried — mainnet first. Lists written from that date on carry the chain inside the
+  sealed document and the right aggregator is asked first; the other is still tried, so a list that
+  names its chain wrongly costs one extra request rather than the recovery. `--aggregator`
+  overrides all of it.
 * **An older copy cannot open a newer list.** The list format carries a version, and a build that
   predates it stops and says so rather than guessing at bytes it does not understand — guessing is
   how a recovery produces files that look right and are not. `nmts-recovery --version` prints the
@@ -235,6 +238,17 @@ A recovery that half worked and reported success is the failure worth designing 
   in its destination directory and renamed only after every check above has passed.
 * **A failure costs one file, not the recovery.** What failed is named, and the exit code says
   something did.
+* **The file's own date is put back**, when the list recorded one — after the file is complete and
+  in place, never before, and a filesystem that refuses timestamps costs a note rather than the
+  file. A list that recorded no date leaves the file dated at the moment of the recovery, which is
+  honest; stamping such a file 1 January 1970 would read as damage.
+
+⚠ **What the program does NOT decide with:** a list's dates, its `totals`, and anything in the
+`.nmtsmap` file's plaintext header. The dates come from the storage layer and are checked against
+nothing, so they are written onto files and used for nothing else. A `totals` that disagrees with
+what was read is reported and the recovery continues. The plaintext header is editable by anyone
+holding the file, so nothing in it is shown as advice and no URL in it is ever printed as somewhere
+to download software — what the program shows about a list comes out of the sealed document.
 
 Exit codes: `0` everything restored · `1` it could not start · `2` the arguments were wrong ·
 `3` finished with failures.

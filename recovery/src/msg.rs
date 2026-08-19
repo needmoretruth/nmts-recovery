@@ -91,6 +91,37 @@ pub const MAP_SEQ_DISAGREES: Line = Line(
 
 pub const SUMMARY_HEAD: Line = Line("This list covers:", "이 복구 목록이 담고 있는 것:");
 
+/// What the list says about ITSELF, printed above what it covers (owner directive, 2026-08-19).
+///
+/// ⭐ The half that earns its line is `{chain}`. Before it existed, a blob id from testnet and one
+/// from mainnet were the same string to this program, so a list that resolved to nothing looked
+/// exactly like a list whose bytes were gone.
+pub const LIST_ABOUT: Line = Line(
+    "Written by {product} {version} · {network}/{chain}",
+    "{product} {version}이(가) 쓴 목록입니다 · {network}/{chain}",
+);
+
+/// Where the format is written down — for whoever is reading this without our code beside them.
+pub const LIST_SPEC: Line = Line("Format: {url}", "형식 설명: {url}");
+
+/// The document's own count does not match what was parsed out of it.
+///
+/// ⛔ Said, not enforced. The document is one authenticated envelope, so this cannot be an attack —
+/// it is a reader that skipped records it did not recognise, which is exactly the case a person
+/// must be told about rather than left to discover by a missing file.
+pub const LIST_TOTALS_DISAGREE: Line = Line(
+    "⚠ This list says it holds {claimed} files; {parsed} were read. Some records were not \
+     understood by this build — a newer nmts-recovery may read them.",
+    "⚠ 이 목록은 파일 {claimed}개를 담았다고 적고 있는데 읽어낸 것은 {parsed}개입니다. 이 판이 \
+     이해하지 못한 기록이 있습니다. 더 새로운 nmts-recovery라면 읽을 수 있습니다.",
+);
+
+/// A file was written but its recorded date could not be put back.
+pub const DATE_NOT_RESTORED: Line = Line(
+    "the file is complete; its original date could not be set",
+    "파일은 온전합니다. 원래 날짜만 되돌리지 못했습니다",
+);
+
 pub const NOTHING_MATCHED: Line = Line(
     "Nothing in this list matches --only.",
     "--only 에 해당하는 것이 이 복구 목록에 없습니다.",
@@ -333,6 +364,10 @@ pub const ALL_LINES: &[Line] = &[
     MAP_NEEDS_VERSION,
     MAP_SEQ_DISAGREES,
     SUMMARY_HEAD,
+    LIST_ABOUT,
+    LIST_SPEC,
+    LIST_TOTALS_DISAGREE,
+    DATE_NOT_RESTORED,
     NOTHING_MATCHED,
     FETCH_PLAN_HEAD,
     RESTORE_HEAD,

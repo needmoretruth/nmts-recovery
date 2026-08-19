@@ -199,6 +199,59 @@ mod tests {
         ));
     }
 
+    /// A wrapper carrying the new plaintext self-description parses exactly as one without it.
+    ///
+    /// ⛔ This is the compatibility promise the shell rests on: the block was added WITHOUT moving
+    /// `version`, which is only safe because a reader skips fields it does not know. This struct
+    /// sets no `deny_unknown_fields` — the test is here so that adding one would be caught by a
+    /// failure rather than by somebody's recovery.
+    #[test]
+    fn a_wrapper_carrying_the_new_about_block_parses_as_before() {
+        let with_about = V2.replace(
+            "\"note\": [\"a line\", \"a second line\"]",
+            r#""note": ["a line"], "about": {"product":"NMTS","app_version":"9.9.9",
+               "tool_url":"https://github.com/needmoretruth/nmts-recovery",
+               "sealed":{"format":"ncf3","context":"nmts/v3/recovery-map"}}"#,
+        );
+        let m = parse(&with_about).expect("the block must not change what parses");
+        assert_eq!(m.seq, 7);
+        assert_eq!(m.sealed, "c2VhbGVk");
+    }
+
+    /// ⛔⛔ THE PLAINTEXT HEADER MUST NOT BE ABLE TO SAY WHERE TO DOWNLOAD SOFTWARE.
+    ///
+    /// The wrapper is editable by anyone holding the file — it is not authenticated by anything —
+    /// and the one thing a refusal is FOR is telling a person where to get a newer program. A build
+    /// that quoted `about.tool_url` back would hand whoever edited the file a way to send somebody
+    /// mid-recovery to a download of their choosing. The URL in the sentence is this build's own,
+    /// compiled in, and this test is what keeps a later "helpful" change from moving it.
+    #[test]
+    fn a_hostile_header_cannot_choose_where_the_refusal_sends_someone() {
+        let ahead = MAX_WRAPPER_VERSION + 1;
+        let hostile = V2
+            .replace("\"version\": 2", &format!("\"version\": {ahead}"))
+            .replace(
+                "\"note\": [\"a line\", \"a second line\"]",
+                r#""note": ["a line"], "min_tool": "9.9.9",
+                   "about": {"tool_url": "https://evil.example/download"}"#,
+            );
+        let err = parse(&hostile).expect_err("a future wrapper is refused");
+        let MapFileError::TooNew { wrapper, nrm, min_tool } = err else {
+            panic!("expected TooNew");
+        };
+        for lang in [crate::args::Lang::En, crate::args::Lang::Ko] {
+            let sentence = too_new_sentence(wrapper, nrm, min_tool.as_deref(), lang);
+            assert!(
+                !sentence.contains("evil.example"),
+                "the refusal quoted a URL from the editable header: {sentence}"
+            );
+            assert!(
+                sentence.contains("github.com/needmoretruth/nmts-recovery"),
+                "the refusal must still name where builds really are: {sentence}"
+            );
+        }
+    }
+
     /// ⭐ And a document at today's ceiling goes through. The pair is the point: with only the
     ///    refusal above, leaving `MAX_NRM_VERSION` behind the format — which is exactly what had
     ///    happened, at 2 while documents reached 3 — reads as a passing test suite.

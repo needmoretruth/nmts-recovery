@@ -476,3 +476,131 @@ fn asking_for_secrets_prints_them_after_the_warning_about_them() {
     let first_key = said.find("suiprivkey").expect("no key");
     assert!(warning < first_key, "the warning came after the keys");
 }
+
+// ── What the list says about itself (owner directive, 2026-08-19) ────────────────────────────────────────────────
+
+/// A restored file keeps the date the list recorded for it.
+///
+/// ⭐ The reason this is worth bytes in a format: a recovery used to hand a person four hundred
+/// files all dated the moment of the recovery, which is the one date that is certainly wrong. The
+/// dates come out of the storage layer and are checked against nothing, so they may not decide
+/// anything — but writing them onto the files decides nothing.
+#[test]
+fn a_restored_file_keeps_the_date_the_list_recorded() {
+    let fx = Fixture::new();
+    let body = b"dated".to_vec();
+    let item = fx.add_file("dated.txt", "/", &body, 1, false);
+    fx.write_map(vec![item]);
+
+    let out = fx.restore();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+
+    let meta = fs::metadata(fx.path("out").join("dated.txt")).expect("restored file");
+    let modified = meta
+        .modified()
+        .expect("a modification time")
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("after the epoch")
+        .as_secs();
+    assert_eq!(
+        modified,
+        common::UPDATED_AT_UNIX,
+        "the file kept the date of the recovery instead of its own"
+    );
+}
+
+/// A list with no dates leaves the file with the date it was written — not 1970.
+///
+/// ⛔ The discriminating half. An implementation that parsed nothing and passed the epoch through
+/// would satisfy the test above's opposite and stamp every file "1 January 1970", which reads as
+/// data corruption to anyone looking at the folder.
+#[test]
+fn a_file_the_list_gave_no_date_is_left_at_the_time_of_the_recovery() {
+    let fx = Fixture::new();
+    let body = b"undated".to_vec();
+    let mut item = fx.add_file("undated.txt", "/", &body, 1, false);
+    item.created_at = None;
+    item.updated_at = None;
+    fx.write_map(vec![item]);
+
+    let out = fx.restore();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+
+    let modified = fs::metadata(fx.path("out").join("undated.txt"))
+        .expect("restored file")
+        .modified()
+        .expect("a modification time")
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("after the epoch")
+        .as_secs();
+    // Some time after this format was designed, and not the fixture's date either.
+    assert!(modified > 1_750_000_000, "left at {modified}, which is not now");
+    assert_ne!(modified, common::UPDATED_AT_UNIX);
+}
+
+/// The list's own account of itself is printed before what it covers.
+#[test]
+fn the_list_says_who_wrote_it_and_which_chain_it_belongs_to() {
+    let fx = Fixture::new();
+    let item = fx.add_file("a.txt", "/", b"x", 1, false);
+    fx.write_map_with_meta(
+        vec![item],
+        nmts_crypto::manifest::Meta {
+            product: Some("NMTS".into()),
+            app_version: Some("9.9.9".into()),
+            spec_url: Some("https://example.invalid/RECOVERY-MANIFEST.md".into()),
+            storage: Some(nmts_crypto::manifest::MetaStorage {
+                network: Some("walrus".into()),
+                chain: Some("testnet".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+
+    let out = fx.run(&["--list"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("NMTS 9.9.9"), "{text}");
+    assert!(text.contains("walrus/testnet"), "{text}");
+    assert!(text.contains("https://example.invalid/RECOVERY-MANIFEST.md"), "{text}");
+}
+
+/// A list that does NOT carry the block says nothing extra — and still lists its files.
+#[test]
+fn a_list_without_the_block_prints_no_invented_facts() {
+    let fx = Fixture::new();
+    let item = fx.add_file("a.txt", "/", b"x", 1, false);
+    fx.write_map(vec![item]);
+
+    let out = fx.run(&["--list"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("a.txt"), "{text}");
+    // ⛔ No stand-in chain, no guessed product version. "?" is only ever printed beside values the
+    //    document did carry a block for; a document with none gets no line at all.
+    assert!(!text.contains("Written by"), "{text}");
+    assert!(!text.contains("walrus/"), "{text}");
+}
+
+/// The document's own count disagreeing with what was read is SAID, not swallowed.
+#[test]
+fn a_count_that_disagrees_with_what_was_read_is_reported() {
+    let fx = Fixture::new();
+    let item = fx.add_file("a.txt", "/", b"x", 1, false);
+    fx.write_map_with_meta(
+        vec![item],
+        nmts_crypto::manifest::Meta {
+            totals: Some(nmts_crypto::manifest::MetaTotals {
+                items: Some(12),
+                bytes: Some(999),
+            }),
+            ..Default::default()
+        },
+    );
+
+    let out = fx.run(&["--list"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("says it holds 12 files"), "{text}");
+    assert!(text.contains("1 were read"), "{text}");
+    // ⛔ And it is a warning, not a refusal: the one file that IS in the list still comes back.
+    assert!(out.status.success(), "{text}");
+}

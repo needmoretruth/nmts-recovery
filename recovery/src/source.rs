@@ -26,6 +26,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use nmts_crypto::manifest::RecoveryManifest;
+
 /// NCF-3 §4.1: the fixed stream header.
 const HEADER_LEN: u64 = 72;
 /// NCF-3 §4.1: `chunk_size_log2 = 22`.
@@ -39,16 +41,79 @@ const LENGTH_SLACK: u64 = 4096;
 
 /// The aggregators tried when the caller names none.
 ///
-/// ⚠ BOTH NETWORKS ARE LISTED, and the order is not a preference so much as an admission: an
-/// NRM-2 list records the storage network by NAME (`"walrus"`) and nothing anywhere in the document
-/// says whether that was Walrus mainnet or Walrus testnet. Live NMTS data is on mainnet, so it is
-/// tried first; testnet follows so that a list from before the 2026-08-02 cutover still resolves.
-/// A blob id that belongs to neither simply 404s on both, which is the same answer either way.
-/// ▶ The real fix is a field in the next list version; until then, `--aggregator` overrides this.
+/// ⚠ BOTH NETWORKS ARE LISTED because a blob id does not say which chain issued it. Live NMTS data
+/// is on mainnet, so mainnet is tried first and testnet follows, which keeps a list from before the
+/// 2026-08-02 cutover resolving. A blob id that belongs to neither simply 404s on both.
+///
+/// ⭐ A LIST CAN NOW SAY WHICH CHAIN IT MEANS (`meta.storage.chain`) — this comment used
+/// to end with *"the real fix is a field in the next list version"*, and that is the field. When it
+/// is there, [`aggregators_for_chain`] puts the right endpoint first and the guessing stops. The
+/// order below is what happens when it is not.
 pub const DEFAULT_AGGREGATORS: [&str; 2] = [
     "https://aggregator.walrus-mainnet.walrus.space",
     "https://aggregator.walrus-testnet.walrus.space",
 ];
+
+/// The default endpoints, ordered by what the list says about itself.
+///
+/// # What is trusted here, and why that is safe
+/// `chain` and `recorded` come out of the SEALED document — they were written by whoever holds the
+/// account code, and the bytes fetched are authenticated against the file key regardless, so a
+/// wrong endpoint costs a failed fetch and nothing else. ⛔ The plaintext wrapper's own
+/// self-description is NOT used for this, or for anything else the program acts on: anyone holding
+/// the file can edit it (`mapfile.rs`).
+///
+/// `recorded` goes LAST, after both built-ins. It is the oldest information in the file — the
+/// endpoints one particular browser was reading on one particular day — so it is a fallback for
+/// the case where this program's own defaults have gone dark, not a preference.
+pub fn aggregators_for_chain(chain: Option<&str>, recorded: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    // A chain name this build does not know leaves the built-in order alone rather than emptying
+    // it: an unrecognised word is a reason to stop guessing, not a reason to fetch nothing.
+    let prefer = match chain {
+        Some("testnet") => Some("walrus-testnet"),
+        Some("mainnet") => Some("walrus-mainnet"),
+        _ => None,
+    };
+    if let Some(needle) = prefer {
+        for d in DEFAULT_AGGREGATORS.iter().filter(|d| d.contains(needle)) {
+            out.push((*d).to_string());
+        }
+    }
+    for d in DEFAULT_AGGREGATORS.iter() {
+        let d = (*d).to_string();
+        if !out.contains(&d) {
+            out.push(d);
+        }
+    }
+    for r in recorded {
+        let r = r.trim_end_matches('/').to_string();
+        if !r.is_empty() && !out.contains(&r) {
+            out.push(r);
+        }
+    }
+    out
+}
+
+/// Which endpoints to read from, for one run — **the one place that decides it.**
+///
+/// ⛔ It is a function rather than two similar blocks because there are two doors into a restore:
+/// the terminal and the control window. When the same decision was written at both, only one of
+/// them would have learned that a list can now name its chain, and the other would have gone on
+/// guessing while every test passed. A single source is only a single source when nothing is
+/// allowed to go around it.
+pub fn endpoints_for(named: &[String], manifest: &RecoveryManifest) -> Vec<String> {
+    // An explicit `--aggregator` wins outright: a person who named an endpoint meant it, and this
+    // is also the escape hatch for the day both built-in hosts are gone.
+    if !named.is_empty() {
+        return named.to_vec();
+    }
+    let storage = manifest.meta.as_ref().and_then(|m| m.storage.as_ref());
+    aggregators_for_chain(
+        storage.and_then(|s| s.chain.as_deref()),
+        storage.map(|s| s.aggregators.as_slice()).unwrap_or(&[]),
+    )
+}
 
 /// The storage network name this build knows how to fetch from.
 ///
@@ -286,6 +351,85 @@ impl BlobSource for DirSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn manifest_with(chain: Option<&str>, recorded: &[&str]) -> RecoveryManifest {
+        RecoveryManifest {
+            v: 2,
+            seq: 1,
+            prev_manifest_blob_id: None,
+            generated_at: "t".into(),
+            account_id: "a".into(),
+            meta: chain.map(|c| nmts_crypto::manifest::Meta {
+                storage: Some(nmts_crypto::manifest::MetaStorage {
+                    network: Some("walrus".into()),
+                    chain: Some(c.into()),
+                    aggregators: recorded.iter().map(|r| (*r).to_string()).collect(),
+                    chain_rpc: None,
+                }),
+                ..Default::default()
+            }),
+            items: Vec::new(),
+        }
+    }
+
+    /// ⭐ The list now says which chain it means, and the guessing stops (owner directive, 2026-08-19).
+    #[test]
+    fn the_chain_the_list_names_is_asked_first() {
+        let testnet = aggregators_for_chain(Some("testnet"), &[]);
+        assert!(testnet[0].contains("walrus-testnet"), "{testnet:?}");
+        let mainnet = aggregators_for_chain(Some("mainnet"), &[]);
+        assert!(mainnet[0].contains("walrus-mainnet"), "{mainnet:?}");
+        // ⛔ And the other one is still THERE. A list that names its chain wrongly — an old build,
+        //    a hand-edited document — must cost an extra request, not the recovery.
+        assert_eq!(testnet.len(), DEFAULT_AGGREGATORS.len());
+        assert!(testnet.iter().any(|e| e.contains("walrus-mainnet")));
+    }
+
+    /// A chain name this build has never heard of is a reason to stop guessing, not to fetch
+    /// nothing: the built-in order stands unchanged.
+    #[test]
+    fn an_unknown_chain_leaves_the_order_alone() {
+        let out = aggregators_for_chain(Some("some-future-chain"), &[]);
+        assert_eq!(out, DEFAULT_AGGREGATORS.to_vec());
+        assert_eq!(aggregators_for_chain(None, &[]), DEFAULT_AGGREGATORS.to_vec());
+    }
+
+    /// The endpoints the list recorded come LAST, and never twice.
+    ///
+    /// They are the oldest information in the file — where one browser was reading on one day — so
+    /// they are the fallback for when this program's own hosts have gone dark, not a preference.
+    #[test]
+    fn recorded_endpoints_are_a_last_resort_and_are_not_repeated() {
+        let out = aggregators_for_chain(
+            Some("mainnet"),
+            &[
+                "https://aggregator.walrus-mainnet.walrus.space/".to_string(),
+                "https://someone-elses.example".to_string(),
+            ],
+        );
+        assert_eq!(out.last().map(String::as_str), Some("https://someone-elses.example"));
+        assert_eq!(
+            out.iter().filter(|e| e.contains("walrus-mainnet")).count(),
+            1,
+            "a recorded endpoint that is already a default must not be listed twice: {out:?}"
+        );
+    }
+
+    /// ⛔ An endpoint the person named wins outright — including over the list's own chain.
+    #[test]
+    fn an_explicit_aggregator_beats_everything_the_list_says() {
+        let named = vec!["https://mine.example".to_string()];
+        let out = endpoints_for(&named, &manifest_with(Some("testnet"), &["https://theirs.example"]));
+        assert_eq!(out, named);
+    }
+
+    #[test]
+    fn without_an_explicit_endpoint_the_list_decides() {
+        let out = endpoints_for(&[], &manifest_with(Some("testnet"), &[]));
+        assert!(out[0].contains("walrus-testnet"), "{out:?}");
+        // A list with no block at all: the built-in order, exactly as before this existed.
+        assert_eq!(endpoints_for(&[], &manifest_with(None, &[])), DEFAULT_AGGREGATORS.to_vec());
+    }
 
     #[test]
     fn stream_length_matches_the_format() {

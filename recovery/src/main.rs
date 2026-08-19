@@ -267,6 +267,10 @@ fn proceed(
         return Ok(ExitCode::from(1));
     }
 
+    // ⭐ WHERE TO ASK, decided once, from what the SEALED list says about itself (owner directive, 2026-08-19). An
+    //    explicit `--aggregator` still wins outright: a person who named an endpoint means it.
+    let endpoints = source::endpoints_for(&a.aggregators, manifest);
+
     match a.mode {
         Mode::List => {
             print_summary(manifest, &planned, lang);
@@ -274,12 +278,12 @@ fn proceed(
         }
         Mode::FetchPlan => {
             print_summary(manifest, &planned, lang);
-            print_fetch_plan(&planned, a, lang);
+            print_fetch_plan(&planned, &endpoints, lang);
             Ok(ExitCode::SUCCESS)
         }
         _ => {
             print_summary(manifest, &planned, lang);
-            do_restore(&planned, a, lang)
+            do_restore(&planned, a, &endpoints, lang)
         }
     }
 }
@@ -334,6 +338,7 @@ fn open_kit(raw: &str, lang: Lang) -> Result<(mapfile::MapFile, Option<String>),
 /// What the list covers. Printed in every mode, because a person should see what they are about to
 /// act on before anything is fetched or written.
 fn print_summary(manifest: &RecoveryManifest, planned: &[restore::PlannedItem<'_>], lang: Lang) {
+    print_list_about(manifest, lang);
     let bytes: u64 = planned.iter().map(|p| p.item.size).sum();
     println!(
         "{} {} files, {} (list #{}, taken {})",
@@ -357,11 +362,60 @@ fn print_summary(manifest: &RecoveryManifest, planned: &[restore::PlannedItem<'_
     }
 }
 
+/// What the list says about ITSELF, when it says anything (owner directive, 2026-08-19).
+///
+/// ⛔ ONLY THE SEALED BLOCK IS READ. The `.nmtsmap` wrapper carries the same answers in plaintext,
+///    and this program deliberately ignores them: anyone holding the file can edit that header, and
+///    the fields worth printing are URLs — "here is where to download the program" taken from an
+///    attacker-editable line is exactly the sentence not to print. What is shown here came out of
+///    an envelope that only the account code opens.
+fn print_list_about(manifest: &RecoveryManifest, lang: Lang) {
+    let Some(meta) = manifest.meta.as_ref() else {
+        return;
+    };
+    let storage = meta.storage.as_ref();
+    // Every field is optional, so every field has a stand-in rather than a reason to print nothing:
+    // half an answer is still more than the nothing this line replaced.
+    let unknown = "?";
+    println!(
+        "{}",
+        msg::LIST_ABOUT
+            .get(lang)
+            .replace("{product}", meta.product.as_deref().unwrap_or("NMTS"))
+            .replace("{version}", meta.app_version.as_deref().unwrap_or(unknown))
+            .replace(
+                "{network}",
+                storage.and_then(|s| s.network.as_deref()).unwrap_or(unknown)
+            )
+            .replace(
+                "{chain}",
+                storage.and_then(|s| s.chain.as_deref()).unwrap_or(unknown)
+            )
+    );
+    if let Some(url) = meta.spec_url.as_deref() {
+        println!("{}", msg::LIST_SPEC.get(lang).replace("{url}", url));
+    }
+    // ⚠ A disagreement is a READER problem, not a tampering signal — the document is one
+    //   authenticated envelope. Saying it is what stops a person discovering it as a missing file.
+    if let Some(claimed) = meta.totals.as_ref().and_then(|t| t.items) {
+        let parsed = manifest.items.len() as u64;
+        if claimed != parsed {
+            println!(
+                "{}",
+                msg::LIST_TOTALS_DISAGREE
+                    .get(lang)
+                    .replace("{claimed}", &claimed.to_string())
+                    .replace("{parsed}", &parsed.to_string())
+            );
+        }
+    }
+}
+
 /// The URLs to fetch by hand. The names printed here are the names `--blobs-dir` looks for.
-fn print_fetch_plan(planned: &[restore::PlannedItem<'_>], a: &args::Args, lang: Lang) {
-    // Built the same way `do_restore` builds it, and asked for its endpoints, so the URLs printed
-    // here cannot drift from the URLs the program would have fetched.
-    let http = HttpSource::new(a.aggregators.clone());
+fn print_fetch_plan(planned: &[restore::PlannedItem<'_>], endpoints: &[String], lang: Lang) {
+    // Built from the SAME endpoint list `do_restore` is handed, so the URLs printed here cannot
+    // drift from the URLs the program would have fetched.
+    let http = HttpSource::new(endpoints.to_vec());
     let base = http.endpoints().first().map(String::as_str).unwrap_or("");
     println!("\n{}", msg::FETCH_PLAN_HEAD.get(lang));
     for p in planned {
@@ -385,11 +439,12 @@ fn print_fetch_plan(planned: &[restore::PlannedItem<'_>], a: &args::Args, lang: 
 fn do_restore(
     planned: &[restore::PlannedItem<'_>],
     a: &args::Args,
+    endpoints: &[String],
     lang: Lang,
 ) -> Result<ExitCode, String> {
     let source: Box<dyn BlobSource> = match &a.blobs_dir {
         Some(dir) => Box::new(DirSource::new(dir)),
-        None => Box::new(HttpSource::new(a.aggregators.clone())),
+        None => Box::new(HttpSource::new(endpoints.to_vec())),
     };
     println!("\n{} ({})", msg::RESTORE_HEAD.get(lang), source.describe());
 
@@ -412,6 +467,7 @@ fn do_restore(
                     let line = match note {
                         Note::PartOrderUnverifiable => msg::PART_PLACEMENT_UNVERIFIABLE.get(lang),
                         Note::NoContentHash => msg::NO_HASH_NOTE.get(lang),
+                        Note::DateNotRestored => msg::DATE_NOT_RESTORED.get(lang),
                     };
                     println!("      {line}");
                 }
