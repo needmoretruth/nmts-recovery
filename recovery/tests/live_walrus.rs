@@ -90,6 +90,7 @@ fn a_real_blob_on_walrus_comes_back_as_the_original_file() {
                 part_index: Some(0),
                 blob_id: Some(blob_id.clone()),
                 plaintext_len: plaintext.len() as u64,
+                padded_len: None,
                 network: Some("walrus".into()),
                 sui_object_id: None,
             }],

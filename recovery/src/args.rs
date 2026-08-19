@@ -203,10 +203,16 @@ pub fn parse(argv: &[String]) -> Parsed {
         let taken = match arg {
             "--help" | "-h" => return Parsed::Print(USAGE.to_string(), 0),
             "--version" | "-V" => {
+                // ⭐ The list format ceiling is printed beside the program's own number, because
+                //    that is the question a person actually has: "will my copy open this list?"
+                //    A recovery list says which format it is, and a build that predates it stops
+                //    rather than guessing — so the two numbers together are the whole answer, and
+                //    neither is guessable from the other.
                 return Parsed::Print(
                     format!(
-                        "nmts-recovery {} — AGPL-3.0-only\n",
-                        env!("CARGO_PKG_VERSION")
+                        "nmts-recovery {} — AGPL-3.0-only\nreads recovery lists up to NRM-{}\n",
+                        env!("CARGO_PKG_VERSION"),
+                        crate::mapfile::MAX_NRM_VERSION
                     ),
                     0,
                 )

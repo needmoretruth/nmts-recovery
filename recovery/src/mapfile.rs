@@ -29,7 +29,14 @@ pub const MAX_WRAPPER_VERSION: u64 = 2;
 /// Kept beside the wrapper's own ceiling because the two move independently — NRM-2 shipped
 /// without touching the shell. The check is here rather than in the crypto crate because refusing
 /// early means the account code is never even asked for on a list this build cannot use.
-pub const MAX_NRM_VERSION: u64 = 2;
+///
+/// ⭐ Taken FROM the crypto crate rather than written out again (2026-08-18). It had been left at
+/// `2` while the document format reached 3, so this build would have refused a list it could read
+/// every byte of. Reading the number from the one crate that defines the document means the two
+/// can no longer disagree — and the refusal keeps its point, because a list written by a NEWER
+/// product than this program still stops here with "this list is newer than this program" rather
+/// than somewhere deep in a recovery.
+pub const MAX_NRM_VERSION: u64 = nmts_crypto::manifest::MANIFEST_VERSION as u64;
 
 /// What the wrapper says before anything is decrypted.
 #[derive(Debug, Clone, Deserialize)]
@@ -120,19 +127,34 @@ mod tests {
         assert!(matches!(parse(&empty), Err(MapFileError::NotAMap(_))));
     }
 
-    /// ⛔ A future format is refused, not guessed at. Reading a v3 wrapper as if it were v2 is how
-    ///    a recovery produces files that look right and are not.
+    /// ⛔ A future format is refused, not guessed at. Reading a newer wrapper as if it were this
+    ///    one is how a recovery produces files that look right and are not.
+    ///
+    /// ⚠ Written against `MAX_*_VERSION + 1` rather than a literal. It used to say `3`, and the
+    ///   document ceiling has since moved twice — a literal here would have gone on passing while
+    ///   testing that a version this build fully understands is refused.
     #[test]
     fn refuses_a_wrapper_or_document_from_the_future() {
-        let newer_shell = V2.replace("\"version\": 2", "\"version\": 3");
+        let ahead_shell = MAX_WRAPPER_VERSION + 1;
+        let newer_shell = V2.replace("\"version\": 2", &format!("\"version\": {ahead_shell}"));
         assert!(matches!(
             parse(&newer_shell),
-            Err(MapFileError::TooNew { wrapper: 3, .. })
+            Err(MapFileError::TooNew { wrapper, .. }) if wrapper == ahead_shell
         ));
-        let newer_doc = V2.replace("\"nrm\": 2", "\"nrm\": 3");
+        let ahead_doc = MAX_NRM_VERSION + 1;
+        let newer_doc = V2.replace("\"nrm\": 2", &format!("\"nrm\": {ahead_doc}"));
         assert!(matches!(
             parse(&newer_doc),
-            Err(MapFileError::TooNew { nrm: 3, .. })
+            Err(MapFileError::TooNew { nrm, .. }) if nrm == ahead_doc
         ));
+    }
+
+    /// ⭐ And a document at today's ceiling goes through. The pair is the point: with only the
+    ///    refusal above, leaving `MAX_NRM_VERSION` behind the format — which is exactly what had
+    ///    happened, at 2 while documents reached 3 — reads as a passing test suite.
+    #[test]
+    fn reads_a_document_at_the_current_ceiling() {
+        let at_ceiling = V2.replace("\"nrm\": 2", &format!("\"nrm\": {MAX_NRM_VERSION}"));
+        assert_eq!(parse(&at_ceiling).expect("today's format must open").nrm, MAX_NRM_VERSION);
     }
 }

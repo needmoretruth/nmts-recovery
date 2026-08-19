@@ -36,14 +36,21 @@ Stated plainly, because a recovery tool that oversells itself is worse than none
 
 * **It cannot find your files without the recovery list.** The list is the index: it holds each
   file's key and where its pieces are stored. Blob addresses on Walrus are derived from the
-  content, so nothing computes them from an account code. Today the recovery list lives in your `.nmtsmap`
-  file and in NMTS's database, and nowhere else — so save the file while you can.
+  content, so nothing computes them from an account code alone.
+  There are two places a list can be: the `.nmtsmap` file you saved, and — if the account switched
+  the storage-network copy on — a copy on Walrus that `--find` can look up from your account code
+  (see below). If neither exists, nothing here can reconstruct one, so save the file while you can.
 * **It cannot recover anything you deleted.** Deleting a file in NMTS destroys its key, and the
   key is what this program needs.
 * **It cannot prove a blob is still stored.** It finds out by fetching it.
-* **It cannot tell you which Walrus network a list refers to.** An NRM-2 list records the storage
+* **It cannot tell you which Walrus network a list refers to.** A recovery list records the storage
   network by name (`walrus`) and does not say mainnet or testnet, so both are tried in that order.
   `--aggregator` overrides this.
+* **An older copy cannot open a newer list.** The list format carries a version, and a build that
+  predates it stops and says so rather than guessing at bytes it does not understand — guessing is
+  how a recovery produces files that look right and are not. `nmts-recovery --version` prints the
+  program's own number and the newest list version it reads; if a list is ahead of it, take a newer
+  build from this repository.
 
 ## Build
 
@@ -86,7 +93,10 @@ folder you filled with `--blobs-dir`. Everything after the bytes arrive is ident
 
 | Option | |
 |---|---|
-| `--map FILE` | your recovery list (`.nmtsmap`) **or** your recovery kit (`.txt`), which has the list inside it. Required unless `--gui` or `--derive`. |
+| `--map FILE` | your recovery list (`.nmtsmap`) **or** your recovery kit (`.txt`), which has the list inside it. Required unless `--find`, `--gui` or `--derive`. |
+| `--find` | look the list up on Walrus from your account code alone — no saved file. See below. |
+| `--rpc URL` | a Sui node for `--find` to ask. Repeatable; tried in order. |
+| `--owner 0xADDRESS` | with `--find`, the wallet that paid for the uploads. Needed only when that wallet is a browser extension or an imported key, because an account code cannot derive such an address. |
 | `--out DIR` | where to write recovered files. Required when restoring. |
 | `--code-file FILE` | read the account code from a file instead of typing it. |
 | `--aggregator URL` | a Walrus aggregator to read from. Repeatable; tried in order. |
@@ -94,9 +104,37 @@ folder you filled with `--blobs-dir`. Everything after the bytes arrive is ident
 | `--only TEXT` | restore only files whose path or name contains TEXT. |
 | `--overwrite` | replace files that already exist. Off by default. |
 | `--derive` | print what your account code derives, and stop. No list, no network. |
-| `--wallets N` | how many wallets `--derive` walks. Default: 1. |
+| `--wallets N` | how many wallets `--derive` walks, and how many `--find` looks under. Default: 1. |
 | `--secrets` | with `--derive`, also print the wallet private keys. |
 | `--lang en\|ko` | message language. English by default; nothing is auto-detected. |
+
+## When you have no list file
+
+If the account switched the storage-network copy on, a copy of the recovery list is on Walrus and
+your account code is enough to find it:
+
+```sh
+nmts-recovery --find --out ~/recovered
+```
+
+A blob id on Walrus is a hash of the blob's own bytes, so nothing predicts one from an account
+code. Two other things are predictable, and together they are enough: the wallet that paid for the
+storage comes from the account code, and so does the name the list is stored under. So this derives
+the address, asks a public Sui node which blob objects that wallet owns, asks an aggregator each of
+those for a patch by that name, and opens what comes back with the same code.
+
+⚠ **What the lookup tells other people.** A Sui node learns that somebody is interested in that
+address, and an aggregator learns that somebody asked for those patches. Both are public services
+being asked public questions. Neither is given your account code, which never leaves this program.
+
+Two things it needs to be told sometimes: `--owner 0xADDRESS` if the uploads were paid for with a
+browser-extension or imported wallet, because no account code derives such an address; and
+`--wallets N` if the account used more than the first derived wallet.
+
+Finding nothing is an answer, not a failure, and there are three ordinary reasons for it: the copy
+was never switched on, the wallet that paid is not one this code derives, or the account uploaded
+only large files — those are stored as blobs of their own rather than inside a quilt, and it is the
+quilt that carries the list. In any of those cases, use your `.nmtsmap` file.
 
 ## Run it from a browser instead
 
@@ -185,7 +223,10 @@ A recovery that half worked and reported success is the failure worth designing 
   at, and that is compared against the position being written into — never against the part's own
   record, and never after sorting the parts by their own claimed index.
 * **Length is checked twice, against two authorities**: what the recovery list says, and what the part's own
-  sealed header says. Both must agree before a byte is written.
+  sealed header says. Both must agree before a byte is written. A part may be **padded** — sealed
+  larger than the bytes it holds, so that its stored size does not give the file's size away — and
+  then the list carries both numbers, the padding is decrypted and authenticated like everything
+  else, and only the file's own bytes are written out and hashed.
 * **The key is checked before decryption begins**, by the envelope's key commitment.
 * **The whole file is hashed and compared** to the hash the recovery list recorded. This is the only check
   that spans parts, so it is the only one that would catch parts that are each individually

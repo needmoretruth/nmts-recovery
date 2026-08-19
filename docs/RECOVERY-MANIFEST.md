@@ -10,6 +10,11 @@
 > MUST do with it. NRM-1 lists stay readable — see §6 for what changed, and for exactly what an NRM-1
 > list can and cannot promise a reader that an NRM-2 list can.
 >
+> ⚠ **The newest form is NRM-4 (2026-08-18): `padded_len`, a part sealed larger than the bytes it
+> holds.** ⛔ A document still claims the version its CONTENTS need — `minimum_version` — so an
+> ordinary list is still a v2 document and opens in every tool ever shipped. §2.2 is the field and
+> §6 is what changed.
+>
 > ⚠ **The JSON schema in §2 was unchanged by NCF-3; the ENCRYPTION in §1 was not.** NCF-3 replaced NCF-1
 > and NCF-2 outright on 2026-07-29 and renamed this envelope's AAD, so §1 and the sealed-hash note in
 > §2 were corrected on that date. Anything below still saying "frozen NCF-1" would be describing a
@@ -69,7 +74,9 @@ exists for. A product that counted it as durability would be measuring the wrong
         {
           "part_index": 0,                 // REQUIRED from v2. where this part belongs — see §2.1
           "blob_id": "<blob id, in this network's own naming>",  // absent ONLY for own-quilt (v3)
-          "plaintext_len": 1073741824,
+          "plaintext_len": 1073741824,     // the REAL bytes this part contributes to the file
+          "padded_len": 1073745920,        // OPTIONAL, v4. what the SEALED header declares, when
+                                           //   the part was padded. absent = not padded. §2.2
           "sui_object_id": "0x…",          // OPTIONAL. on-chain blob object; never needed to READ
           "network": "walrus"              // OPTIONAL on the wire. absent = "walrus" (bullets below)
         }
@@ -119,7 +126,8 @@ exists for. A product that counted it as durability would be measuring the wrong
   (`Part::network_name` in `crypto/src/manifest.rs`) rather than treating absence as "unknown", which
   in a recovery is the same as unrecoverable. Writers name it on **every** part, including Walrus, so
   new manifests are self-describing.
-- **`size` is exactly the sum of the parts' `plaintext_len`.** Not "about" — exactly. A writer MUST
+- **`size` is exactly the sum of the parts' `plaintext_len`, padding or no padding.** Not "about" —
+  exactly. This is why `padded_len` is a second field rather than a new meaning for the first (§2.2). A writer MUST
   refuse to emit an item where the two disagree, and a reader MAY use the disagreement to reject an
   item outright. This is not bookkeeping: `size` is copied out of the account's own sealed file list,
   which the storage layer cannot write, while the part list is whatever the storage layer served. The
@@ -167,6 +175,49 @@ itself and against the sealed file list: that the numbering is a complete `0…n
 lengths add up to `size`. It cannot check that the blob listed at position `i` really holds part `i`
 — only step 3 above does that, and only at recovery time. `part_index` is recorded so that step 3
 has something to be checked against instead of bare array order.
+
+### 2.2 Padding — `padded_len` (v4)
+
+A stored part may be sealed **larger than the bytes it contributes**, so that whoever can see the
+stored object cannot read the file's real size off it. `plaintext_len` keeps its meaning — the real
+bytes — and `padded_len` says what the sealed NCF-3 header will declare. Absent means the part was
+not padded, and a part where the two would be equal MUST omit the field.
+
+**Why the padding is inside the plaintext rather than appended to the stored bytes.** An NCF-3
+header is authenticated but **not encrypted**: `plaintext_len` sits in the clear at offset 16 of a
+public Walrus object (`CRYPTO-FORMAT-NCF3.md` §4.1). Anyone who fetches the blob reads the file's
+exact original size, however many bytes were tacked on after the stream. Padding is therefore added
+to the plaintext *before* sealing, which makes the header's number the padded one — and leaves the
+real number with nowhere to live except this document.
+
+**Why two numbers rather than one.** Fold the padding into `plaintext_len` and the §2 equality
+(`size` = the sum of the parts) has to weaken from "exactly" to "at least", which accepts any `size`
+below the real one: the file comes back short, and nothing says so unless the item happens to carry
+a `content_hash`. Keeping them apart means every check that existed before padding keeps its exact
+strength, and padding adds one more.
+
+**A reader MUST:**
+
+1. compare the part's sealed header against `padded_len` when present, and against `plaintext_len`
+   otherwise — the same comparison as before, against whichever number the stream is supposed to
+   declare;
+2. decrypt the **whole** stream. The padding is inside the same AEAD as the file's own bytes, so the
+   chunk tags, the final-chunk flag and the recovered length only add up if every byte goes through
+   the decryptor. Reading a shorter prefix turns "this stream is intact" into "the front of this
+   stream is intact";
+3. write and hash only the first `plaintext_len` bytes of what it decrypted, and drop the rest.
+
+**A reader MUST REFUSE** a `padded_len` in a document declaring `v` below 4, and one that is not
+strictly greater than `plaintext_len`. Both are contradictions with no reading a parser may pick.
+
+⛔ **What is deliberately NOT checked: how much padding there is.** The amount follows a setting a
+person can change — a coarser unit, or a number typed in — so a tool that enforced today's rule
+would refuse files padded under tomorrow's setting. What is checked is that the list and the sealed
+header agree, which is the part somebody else could move.
+
+Reference implementations: `crypto/src/manifest.rs::check_padding` (the rules),
+`recovery/src/restore.rs::decrypt_part` (the reader), `web/src/lib/recovery/manifest-doc.ts` (the
+writer). The shared fixture is `crypto/tests/vectors/nrm4-sample.json`.
 
 ### Who writes this JSON
 
@@ -221,6 +272,14 @@ person every other file in it.
 - **Expiry invariant:** a mirrored manifest's Walrus expiry MUST be ≥ the longest-lived file it describes;
   if it rides inside a cohort quilt whose expiry undershoots that, an additional dedicated mirror is
   required (lifecycle-engine rule, P4).
+- ✅ **Measured end to end on 2026-08-18.** A browser created an account, switched the copy on,
+  paid with the wallet the account code derives, and uploaded a real quilt on Walrus testnet;
+  the standalone recovery program was then given the account code and nothing else, found the
+  list with `--find`, and restored both files byte for byte. That measurement is also what
+  showed the feature could not work in the release it shipped in: the browser's compiled
+  encryption engine predated the function that names the list inside a quilt, so the copy was
+  never written. Two checks now compare what the site calls against what the compiled engine
+  provides, and every message name against the text bundles.
 - ✅ **The reason for the wait is spent, and the copy shipped on 2026-08-17.** It was deferred because
   the copy's promise ("recoverable even if you lose the file") could only be verified by a standalone
   recovery tool, and there was none. The tool now lives at `github.com/needmoretruth/nmts-recovery` and
@@ -280,6 +339,24 @@ years later.
 - Implementation: `nmts/web/src/lib/recovery/map-file.ts`.
 
 ## 6. Version history
+
+### NRM-4 (2026-08-18) — `padded_len`
+
+**What it adds.** One optional part field, `padded_len` (§2.2): the part's stored stream was sealed
+larger than the bytes it contributes, so that the file's real size cannot be read off the stored
+object. `plaintext_len` is untouched and still means the real bytes.
+
+**Why the number had to move.** The version marker is what makes the field's ABSENCE mean "this part
+was not padded" instead of "this writer did not record it". A build that predates padding reads
+`plaintext_len` as the whole stream; handed a padded list it would stop on the sealed header — a
+correct refusal, but a confusing one. With the bump it stops on the version instead, before an
+account code is ever asked for, and says the list is newer than the program.
+
+**What still opens where.** An ordinary list is still a v2 document, because a writer stamps
+`minimum_version` — the version its contents need — and an unpadded part carries no v4 form. Only a
+list that actually holds padding is v4. ⛔ **This is why the standalone tool has to be published
+before padding is switched on**: people are holding builds that cannot read a v4 document, and the
+order "readers first, writer second" is what keeps a recovery working for them.
 
 ### NRM-3 (2026-08-17) — the own-quilt placement
 

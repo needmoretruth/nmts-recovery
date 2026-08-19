@@ -17,7 +17,7 @@ use std::path::Path;
 use std::process::Command;
 
 mod common;
-use common::{sha256, Fixture};
+use common::{sha256, Fixture, Padding};
 use nmts_crypto::b64;
 use nmts_crypto::codes::AccountCode;
 
@@ -104,6 +104,88 @@ fn wrong_order_is_caught_even_when_there_is_no_content_hash_to_fall_back_on() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("where part 0 of 2 belongs"), "{text}");
     assert!(!fx.path("out/swapped.bin").exists(), "a scrambled file was written");
+}
+
+/// ⭐ SIZE PADDING. A stored part may be sealed larger than the bytes it contributes,
+///    so that whoever can see the stored object cannot read the file's real size off it. The
+///    padding goes INTO the plaintext — an NCF-3 header is authenticated but not encrypted, so
+///    anything appended to the blob would leave the true length legible at offset 16 — and the
+///    list therefore holds two numbers: what the part contributes and what its sealed header says.
+///
+/// The claim tested here is the only one that matters to a person: **they get their file back,
+/// byte for byte, and the padding is not in it.** The content hash in the list is over the real
+/// bytes, so a tool that wrote the padding out would fail this twice over.
+#[test]
+fn a_padded_part_gives_back_the_real_bytes_and_not_the_padding() {
+    let fx = Fixture::new();
+    let real = b"nineteen bytes here".to_vec();
+    let item = fx.add_padded_file(
+        "notes.txt",
+        "/docs",
+        &real,
+        1,
+        false,
+        Some(Padding { bytes: 4096, recorded: true }),
+    );
+    fx.write_map(vec![item]);
+
+    let out = fx.restore();
+    assert!(
+        out.status.success(),
+        "a padded part was refused:\n{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(restored(&fx, "docs/notes.txt"), real);
+}
+
+/// The multi-part shape a real upload produces: full parts, then a padded tail.
+#[test]
+fn padding_on_the_tail_of_a_multi_part_file_is_taken_off_again() {
+    let fx = Fixture::new();
+    let real: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+    let item = fx.add_padded_file(
+        "photo.raw",
+        "/photos",
+        &real,
+        3,
+        false,
+        Some(Padding { bytes: 65_536, recorded: true }),
+    );
+    fx.write_map(vec![item]);
+
+    let out = fx.restore();
+    assert!(
+        out.status.success(),
+        "a padded multi-part file was refused:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert_eq!(restored(&fx, "photos/photo.raw"), real);
+}
+
+/// ⛔ THE DISCRIMINATING HALF. Tolerating padding must not become tolerating a length the list
+///    and the stored bytes disagree about. Here the part really was padded and the list does NOT
+///    say so — which is what an edited list looks like — and the tool must stop on the sealed
+///    header exactly as it did before padding existed. If this ever passes, `padded_len` has
+///    stopped being a claim the list has to make and the size check has become decorative.
+#[test]
+fn padding_the_list_did_not_record_is_still_refused() {
+    let fx = Fixture::new();
+    let item = fx.add_padded_file(
+        "notes.txt",
+        "/docs",
+        b"nineteen bytes here",
+        1,
+        false,
+        Some(Padding { bytes: 4096, recorded: false }),
+    );
+    fx.write_map(vec![item]);
+
+    let out = fx.restore();
+    assert!(!out.status.success(), "unrecorded padding was accepted");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("the part itself says"), "{text}");
+    assert!(!fx.path("out/docs/notes.txt").exists(), "a padded file was written");
 }
 
 /// A list is a file somebody can edit. Changing the recorded size must not produce a file.

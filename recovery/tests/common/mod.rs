@@ -21,6 +21,16 @@ use nmts_crypto::framing::StreamEncryptor;
 use nmts_crypto::manifest::{Item, Part, Quilt, RecoveryManifest};
 use nmts_crypto::{b64, kdf, wrap};
 
+/// How a synthesised file's last part is padded, and whether the list admits it.
+#[derive(Clone, Copy)]
+pub struct Padding {
+    /// Extra plaintext bytes sealed into the last part.
+    pub bytes: u64,
+    /// Whether the list records them in `padded_len`. `false` builds a list that hides padding it
+    /// really applied — the case a reader must refuse rather than hand back as file content.
+    pub recorded: bool,
+}
+
 /// One synthesised account with a list, a blob folder, and somewhere to restore into.
 pub struct Fixture {
     pub dir: tempfile::TempDir,
@@ -44,6 +54,24 @@ impl Fixture {
     /// Encrypt `plaintext` as `parts` NCF-3 streams, write them where a source would find them,
     /// and return the manifest item describing them.
     pub fn add_file(&self, name: &str, path: &str, plaintext: &[u8], parts: u32, quilted: bool) -> Item {
+        self.add_padded_file(name, path, plaintext, parts, quilted, None)
+    }
+
+    /// The same, with the LAST part padded — the shape a size-hiding upload produces.
+    ///
+    /// The padding is sealed into the plaintext, because an NCF-3 header is authenticated but not
+    /// encrypted: anything appended to the stored blob would leave the real length readable in the
+    /// clear at offset 16. So the stored stream's header says the padded number and the list keeps
+    /// the real one — which is exactly the disagreement the reader has to be told about.
+    pub fn add_padded_file(
+        &self,
+        name: &str,
+        path: &str,
+        plaintext: &[u8],
+        parts: u32,
+        quilted: bool,
+        padding: Option<Padding>,
+    ) -> Item {
         let dek = wrap::generate_dek();
         let chunk = plaintext.len().div_ceil(parts as usize).max(1);
         let mut manifest_parts = Vec::new();
@@ -51,9 +79,14 @@ impl Fixture {
             let start = (index as usize) * chunk;
             let end = ((index as usize + 1) * chunk).min(plaintext.len());
             let slice = &plaintext[start.min(plaintext.len())..end.max(start.min(plaintext.len()))];
-            let mut enc = StreamEncryptor::new_part(&dek, slice.len() as u64, index, parts);
+            let pad_here = padding.filter(|_| index + 1 == parts).map(|p| p.bytes);
+            let sealed_len = slice.len() as u64 + pad_here.unwrap_or(0);
+            let mut enc = StreamEncryptor::new_part(&dek, sealed_len, index, parts);
             let mut stream = enc.header().to_vec();
             stream.extend_from_slice(&enc.push(slice).expect("push"));
+            if let Some(pad) = pad_here {
+                stream.extend_from_slice(&enc.push(&vec![0u8; pad as usize]).expect("push padding"));
+            }
             stream.extend_from_slice(&enc.finish().expect("finish"));
 
             // The id is arbitrary here; what matters is that the FILENAME the tool looks for is
@@ -69,6 +102,9 @@ impl Fixture {
                 part_index: Some(u64::from(index)),
                 blob_id: Some(id.clone()),
                 plaintext_len: slice.len() as u64,
+                padded_len: pad_here
+                    .filter(|_| padding.is_some_and(|p| p.recorded))
+                    .map(|p| slice.len() as u64 + p),
                 network: Some("walrus".into()),
                 sui_object_id: None,
             });
@@ -94,8 +130,11 @@ impl Fixture {
     /// Seal `items` into a `.nmtsmap` beside the blobs.
     pub fn write_map(&self, items: Vec<Item>) {
         let keys = kdf::derive(&self.code).expect("derive");
+        // The version the CONTENT needs, exactly as the product stamps it — so a padded item
+        // makes this a v4 document without the test having to know that.
+        let v = nmts_crypto::manifest::minimum_version(&items);
         let manifest = RecoveryManifest {
-            v: 2,
+            v,
             seq: 4,
             prev_manifest_blob_id: None,
             generated_at: "2026-08-17T09:00:00Z".into(),
@@ -104,7 +143,7 @@ impl Fixture {
         };
         let sealed = manifest.encrypt(&keys.data_key).expect("seal");
         let doc = format!(
-            r#"{{"format":"nmts-recovery-map","version":2,"nrm":2,"seq":4,
+            r#"{{"format":"nmts-recovery-map","version":2,"nrm":{v},"seq":4,
                  "generated_at":"2026-08-17T09:00:00Z","account_id":"{}",
                  "sealed":"{}","note":["en","ko"]}}"#,
             keys.account_id_b64(),

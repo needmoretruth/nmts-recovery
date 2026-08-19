@@ -66,7 +66,13 @@ pub struct PlannedItem<'a> {
 }
 
 impl<'a> PlannedItem<'a> {
-    /// The parts, in list order, as source references.
+    /// The parts, in list order, as source references paired with the plaintext length their
+    /// SEALED stream declares.
+    ///
+    /// ⚠ That is [`Part::stream_plaintext_len`], not `plaintext_len`: a PADDED part was sealed
+    /// larger than the bytes it contributes, so the stored object — and everything sized from it —
+    /// follows the padded number. The real number stays with the part and is applied when the
+    /// plaintext is written out.
     pub fn refs(&self) -> Result<Vec<(BlobRef, u64)>, RefProblem> {
         let mut out = Vec::with_capacity(self.item.parts.len());
         for part in &self.item.parts {
@@ -89,7 +95,7 @@ impl<'a> PlannedItem<'a> {
                         .ok_or(RefProblem::OwnQuiltUnknown)?,
                 ),
             };
-            out.push((r, part.plaintext_len));
+            out.push((r, part.stream_plaintext_len()));
         }
         Ok(out)
     }
@@ -284,18 +290,24 @@ pub fn restore_item(
                 ));
             }
 
+            // What this part CONTRIBUTES, which is less than what its stream holds when the part
+            // was padded. Everything after this line is about the real bytes only: the padding is
+            // decrypted (it is inside the AEAD, so it has to be) and then dropped — never written,
+            // never hashed, never counted.
+            let contributes = item.parts[index].plaintext_len;
             source
                 .open(blob, *part_len, &mut |reader| {
-                    let decoded = decrypt_part(
+                    let kept = decrypt_part(
                         reader,
                         &dek,
                         PartPlacement::at(position, total),
                         *part_len,
+                        contributes,
                         &mut file,
                         &mut hasher,
                         on_bytes,
                     )?;
-                    written += decoded;
+                    written += kept;
                     Ok(())
                 })
                 .map_err(|e: SourceError| match e {
@@ -342,11 +354,22 @@ pub fn restore_item(
 }
 
 /// Read one NCF-3 stream from `reader`, writing its plaintext out as it decrypts.
+///
+/// `map_says` is what the list says the stream's header declares; `keep` is how many of those
+/// bytes belong to the file. They differ only for a PADDED part, and then by exactly the padding.
+/// Returns the bytes KEPT — which is what the file grew by.
+///
+/// ⛔ The padding is decrypted rather than skipped, and that is not an oversight. It is sealed
+///    inside the same AEAD as the file's own bytes, so the chunk tags, the final-chunk flag and
+///    the recovered length only add up if every byte goes through the decryptor. Reading a shorter
+///    prefix would turn "this stream is intact" into "the front of this stream is intact".
+#[allow(clippy::too_many_arguments)]
 fn decrypt_part(
     reader: &mut dyn Read,
     dek: &[u8; DEK_LEN],
     placement: PartPlacement,
     map_says: u64,
+    keep: u64,
     out: &mut dyn Write,
     hasher: &mut Sha256,
     on_bytes: &mut dyn FnMut(u64),
@@ -377,7 +400,7 @@ fn decrypt_part(
     let mut dec = StreamDecryptor::new(dek, &header_bytes)
         .map_err(|_| "this part does not open with your account's key".to_string())?;
     let mut buf = vec![0u8; READ_CHUNK];
-    let mut produced: u64 = 0;
+    let mut left_to_keep = keep;
     loop {
         let n = reader
             .read(&mut buf)
@@ -389,15 +412,29 @@ fn decrypt_part(
             .push(&buf[..n])
             .map_err(|e| format!("the stored bytes failed their authentication check ({e})"))?;
         if !plain.is_empty() {
-            out.write_all(&plain).map_err(|e| format!("the file could not be written ({e})"))?;
-            hasher.update(&plain);
-            produced += plain.len() as u64;
-            on_bytes(plain.len() as u64);
+            let take = usize::try_from(left_to_keep).unwrap_or(usize::MAX).min(plain.len());
+            if take > 0 {
+                out.write_all(&plain[..take]).map_err(|e| format!("the file could not be written ({e})"))?;
+                hasher.update(&plain[..take]);
+                left_to_keep -= take as u64;
+                on_bytes(take as u64);
+            }
         }
     }
+    // The anti-truncation gate: the chunk count, the final flag and the recovered length all have
+    // to agree with the header before any of this counts.
     dec.finish()
         .map_err(|e| format!("the part ended before it was complete ({e})"))?;
-    Ok(produced)
+    if left_to_keep != 0 {
+        // Unreachable while `padded_len > plaintext_len` is enforced at parse time and the header
+        // was just checked against the padded number — which is exactly why it is stated here
+        // rather than assumed: if either of those two ever stops holding, this says so instead of
+        // handing back a file that is short by `left_to_keep` bytes.
+        return Err(format!(
+            "this part was {left_to_keep} bytes shorter than the list said it would be"
+        ));
+    }
+    Ok(keep)
 }
 
 /// The item's DEK, which the list carries raw because the list is itself one envelope.
@@ -580,6 +617,7 @@ mod tests {
                         part_index: Some(0),
                         blob_id: Some(format!("blob-{i}")),
                         plaintext_len: 0,
+                        padded_len: None,
                         network: None,
                         sui_object_id: None,
                     }],
