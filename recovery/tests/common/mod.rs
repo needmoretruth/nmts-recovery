@@ -66,7 +66,14 @@ impl Fixture {
 
     /// Encrypt `plaintext` as `parts` NCF-3 streams, write them where a source would find them,
     /// and return the manifest item describing them.
-    pub fn add_file(&self, name: &str, path: &str, plaintext: &[u8], parts: u32, quilted: bool) -> Item {
+    pub fn add_file(
+        &self,
+        name: &str,
+        path: &str,
+        plaintext: &[u8],
+        parts: u32,
+        quilted: bool,
+    ) -> Item {
         self.add_padded_file(name, path, plaintext, parts, quilted, None)
     }
 
@@ -98,7 +105,8 @@ impl Fixture {
             let mut stream = enc.header().to_vec();
             stream.extend_from_slice(&enc.push(slice).expect("push"));
             if let Some(pad) = pad_here {
-                stream.extend_from_slice(&enc.push(&vec![0u8; pad as usize]).expect("push padding"));
+                stream
+                    .extend_from_slice(&enc.push(&vec![0u8; pad as usize]).expect("push padding"));
             }
             stream.extend_from_slice(&enc.finish().expect("finish"));
 

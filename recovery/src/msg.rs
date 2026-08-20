@@ -60,6 +60,20 @@ pub const MAP_NOT_A_MAP: Line = Line(
     "이 파일은 NMTS 복구 목록이 아닙니다.",
 );
 
+/// Said when a recovery KIT is offered to the control page instead of a recovery list.
+///
+/// ⛔ A kit holds the account code in the clear. The whole design of this program says the code is
+/// typed in the terminal and never goes near a browser, and a kit chosen in the page's file picker
+/// walks straight past that. So the page refuses a kit before it reads one, and this sentence is
+/// what it says — with the command that does work, because a person who saved only the kit has no
+/// other file to offer and must not be left at a dead end.
+pub const KIT_NOT_IN_THE_BROWSER: Line = Line(
+    "That is a recovery kit, not a recovery list. A kit holds your account code, and your account \
+     code must not go through a browser. Open a terminal and run:  nmts-recovery --map <that file>",
+    "그것은 복구 키트이고 복구 목록이 아닙니다. 키트에는 계정 코드가 들어 있고, 계정 코드는 \
+     브라우저를 지나가면 안 됩니다. 터미널에서 다음을 실행하십시오:  nmts-recovery --map <그 파일>",
+);
+
 pub const MAP_WILL_NOT_OPEN: Line = Line(
     "The recovery list would not open. The account code is right for this account, so the file \
      itself has been changed or damaged since it was saved.",
@@ -359,6 +373,7 @@ pub const ALL_LINES: &[Line] = &[
     CODE_MALFORMED,
     CODE_WRONG_ACCOUNT,
     MAP_NOT_A_MAP,
+    KIT_NOT_IN_THE_BROWSER,
     MAP_WILL_NOT_OPEN,
     MAP_TOO_NEW,
     MAP_NEEDS_VERSION,

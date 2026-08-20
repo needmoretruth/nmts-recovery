@@ -226,10 +226,7 @@ pub fn run_with(
     let lang = a.lang;
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, a.port.unwrap_or(0)))
         .map_err(|e| format!("{} ({e})", msg::GUI_NO_PORT.get(lang)))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| format!("{e}"))?
-        .port();
+    let port = listener.local_addr().map_err(|e| format!("{e}"))?.port();
 
     // 32 bytes from the OS CSPRNG, minted per run, printed once. Not derived from anything, not
     // written anywhere, gone when the process ends.
@@ -311,13 +308,33 @@ fn open_map(shared: &Arc<Mutex<Session>>, name: &str, text: &str, a: &Args) {
         s.map_name = None;
     };
 
+    // ⛔ A KIT MUST NOT BE OPENED HERE, EVER — and if one arrives, say why rather than calling it
+    //    a broken list. A kit carries the account code in the clear; the page is told to refuse one
+    //    before it reads the file, so reaching this line means that check was bypassed or the text
+    //    came from somewhere else. Either way the answer is the terminal, not this window.
+    //    ⛔ DO NOT "add kit support" here to make the GUI accept the one-file artefact. The reason
+    //    the terminal asks for the code is that a browser is the wrong place for it, and that does
+    //    not change because the code arrives inside a file instead of a text box.
+    if crate::kitfile::looks_like_kit(text) {
+        return fail(msg::KIT_NOT_IN_THE_BROWSER.get(lang).to_string());
+    }
+
     let wrapper = match mapfile::parse(text) {
         Ok(w) => w,
         Err(mapfile::MapFileError::NotAMap(why)) => {
             return fail(format!("{} — {why}.", msg::MAP_NOT_A_MAP.get(lang)))
         }
-        Err(mapfile::MapFileError::TooNew { wrapper, nrm, min_tool }) => {
-            return fail(mapfile::too_new_sentence(wrapper, nrm, min_tool.as_deref(), lang))
+        Err(mapfile::MapFileError::TooNew {
+            wrapper,
+            nrm,
+            min_tool,
+        }) => {
+            return fail(mapfile::too_new_sentence(
+                wrapper,
+                nrm,
+                min_tool.as_deref(),
+                lang,
+            ))
         }
     };
 
@@ -482,7 +499,13 @@ fn handle(
     let req = match http::read_request(&stream) {
         Ok(r) => r,
         Err(why) => {
-            let _ = http::respond(&mut stream, 400, "text/plain; charset=utf-8", &[], why.as_bytes());
+            let _ = http::respond(
+                &mut stream,
+                400,
+                "text/plain; charset=utf-8",
+                &[],
+                why.as_bytes(),
+            );
             return;
         }
     };
@@ -525,7 +548,13 @@ fn handle(
             api(&mut stream, &req, shared, tx, a);
         }
         _ => {
-            let _ = http::respond(&mut stream, 404, "text/plain; charset=utf-8", &[], b"not here\n");
+            let _ = http::respond(
+                &mut stream,
+                404,
+                "text/plain; charset=utf-8",
+                &[],
+                b"not here\n",
+            );
         }
     }
 }
@@ -575,7 +604,9 @@ fn api(
             json_ok(stream, &body);
         }
         ("POST", "/api/map") => {
-            let Some(doc) = body_json(stream, req) else { return };
+            let Some(doc) = body_json(stream, req) else {
+                return;
+            };
             let name = doc
                 .get("name")
                 .and_then(Value::as_str)
@@ -601,14 +632,18 @@ fn api(
             json_ok(stream, "{\"ok\":true}");
         }
         ("POST", "/api/restore") => {
-            let Some(doc) = body_json(stream, req) else { return };
+            let Some(doc) = body_json(stream, req) else {
+                return;
+            };
             match start_restore(shared, &doc, a) {
                 Ok(()) => json_ok(stream, "{\"ok\":true}"),
                 Err(why) => bad(stream, &why),
             }
         }
         ("POST", "/api/lang") => {
-            let Some(doc) = body_json(stream, req) else { return };
+            let Some(doc) = body_json(stream, req) else {
+                return;
+            };
             let wanted = doc.get("lang").and_then(Value::as_str).unwrap_or("");
             match wanted {
                 "en" | "ko" => {
@@ -650,7 +685,12 @@ fn start_restore(shared: &Arc<Mutex<Session>>, doc: &Value, a: &Args) -> Result<
     let picked: Vec<usize> = doc
         .get("items")
         .and_then(Value::as_array)
-        .map(|v| v.iter().filter_map(Value::as_u64).map(|n| n as usize).collect())
+        .map(|v| {
+            v.iter()
+                .filter_map(Value::as_u64)
+                .map(|n| n as usize)
+                .collect()
+        })
         .unwrap_or_default();
     if picked.is_empty() {
         return Err(msg::GUI_NEED_SELECTION.get(lang).to_string());
@@ -664,7 +704,10 @@ fn start_restore(shared: &Arc<Mutex<Session>>, doc: &Value, a: &Args) -> Result<
         if s.phase == Phase::Restoring {
             return Err(msg::GUI_ALREADY_RUNNING.get(lang).to_string());
         }
-        let manifest = s.manifest.as_ref().ok_or_else(|| "no list is open".to_string())?;
+        let manifest = s
+            .manifest
+            .as_ref()
+            .ok_or_else(|| "no list is open".to_string())?;
         let mut subset = manifest.clone();
         subset.items = picked
             .iter()
@@ -772,7 +815,9 @@ fn run_restore(
 ///    the person is halfway through getting their files back. The recovery itself is guarded by the
 ///    checks in `restore`, which do not consult this state at all.
 fn session(shared: &Arc<Mutex<Session>>) -> MutexGuard<'_, Session> {
-    shared.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    shared
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// The language this run is speaking, read without holding the lock any longer than the read.
@@ -802,7 +847,8 @@ fn bad(stream: &mut TcpStream, why: &str) {
 }
 
 fn busy(stream: &mut TcpStream) {
-    let body = json!({ "error": "this program is busy with the last thing you asked for" }).to_string();
+    let body =
+        json!({ "error": "this program is busy with the last thing you asked for" }).to_string();
     let _ = http::respond(
         stream,
         409,
@@ -901,5 +947,33 @@ mod tests {
     fn the_page_is_present_and_carries_the_slot_the_server_fills() {
         assert!(PAGE.contains(NONCE_SLOT), "the nonce slot is gone");
         assert!(PAGE.contains("</html>"), "the page is truncated");
+    }
+
+    /// ⛔ THE PAGE MUST NOT READ A CHOSEN FILE WHOLE BEFORE IT KNOWS WHAT THE FILE IS.
+    ///
+    /// A recovery kit is a text file with the account code written in it, and the rule this whole
+    /// program is built around is that the code is typed in the terminal and never goes near a
+    /// browser. Until 2026-08-20 the picker read whatever was chosen, whole, and posted it here —
+    /// so choosing a kit put the code through the browser and only then got a refusal.
+    ///
+    /// ⚠ This is a check on HOW THE PAGE IS WRITTEN, which is normally the weakest kind of test.
+    /// It is here because the page is JavaScript that no test in this crate can execute, and
+    /// because what must not happen is the ABSENCE of a guard: there is one whole-file read, and
+    /// it must sit downstream of the bounded head check. Delete the guard and this goes red.
+    #[test]
+    fn the_page_checks_a_bounded_head_before_it_reads_a_file_whole() {
+        let guard = PAGE
+            .find("file.slice(0, HEAD_BYTES)")
+            .expect("the bounded head check is gone — a kit would be read into the browser whole");
+        assert_eq!(
+            PAGE.matches("file.text()").count(),
+            1,
+            "there must be exactly one whole-file read to reason about",
+        );
+        let whole = PAGE.find("file.text()").expect("counted above");
+        assert!(
+            whole > guard,
+            "the whole-file read must come after the head check, not before it",
+        );
     }
 }

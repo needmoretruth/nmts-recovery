@@ -157,7 +157,7 @@
     <h2 id="map-head"></h2>
     <p class="sub" id="map-help"></p>
     <p class="row">
-      <input type="file" id="map-file" accept=".nmtsmap,application/json,text/plain">
+      <input type="file" id="map-file" accept=".nmtsmap,application/json">
     </p>
   </section>
 
@@ -245,6 +245,7 @@
       needSelection: "Tick at least one file first.",
       needDest: "Say where the files should go.",
       sendFail: "The program did not answer. It may have closed.",
+      kitRefused: "That is a recovery kit, not a recovery list. A kit holds your account code, and your account code must not go through a browser. Open a terminal and run:  nmts-recovery --map <that file>",
       closed: "The program has closed. You can close this tab.",
       footer: "This page talks only to the program on this machine. Nothing here reaches the internet, and no NMTS server is contacted at any point.",
     },
@@ -279,6 +280,7 @@
       needSelection: "파일을 하나 이상 골라 주십시오.",
       needDest: "파일을 놓을 자리를 적어 주십시오.",
       sendFail: "프로그램이 답하지 않습니다. 이미 닫힌 것일 수 있습니다.",
+      kitRefused: "그것은 복구 키트이고 복구 목록이 아닙니다. 키트에는 계정 코드가 들어 있고, 계정 코드는 브라우저를 지나가면 안 됩니다. 터미널에서 다음을 실행하십시오:  nmts-recovery --map <그 파일>",
       closed: "프로그램이 닫혔습니다. 이 탭을 닫으셔도 됩니다.",
       footer: "이 화면은 이 기계 안의 프로그램하고만 이야기합니다. 여기서 인터넷으로 나가는 것은 없고, NMTS 서버에는 한 번도 접속하지 않습니다.",
     },
@@ -468,13 +470,33 @@
     draw();
   });
 
+  // A recovery LIST is a JSON document, so it begins with "{". A recovery KIT is a text file for a
+  // person to read, and it begins with a heading — and further down it carries the account code IN
+  // THE CLEAR. That is why this reads a short head slice first and decides from it: a kit must never
+  // be read into this page at all, because reading it is what puts the account code in the browser.
+  //
+  // ⛔ The slice is bounded on purpose. The kit's own layout puts the theft warning above the code,
+  //    so a first line is a heading and nothing else, and this looks at far less than that.
+  // ⛔ DO NOT "improve" this by reading the whole file and checking afterwards. By then it has been
+  //    read, and the extension watching this page has already seen it.
+  var HEAD_BYTES = 64;
+
   $("map-file").addEventListener("change", function () {
     var file = $("map-file").files[0];
     if (!file) { return; }
     localNote = null;
-    file.text().then(function (text) {
-      return call("/api/map", { name: file.name, text: text });
-    }).then(poll).catch(function (e) {
+    file.slice(0, HEAD_BYTES).text().then(function (head) {
+      var first = head.replace(/^[\s\uFEFF]+/, "").charAt(0);
+      if (first !== "{") {
+        // Not a list. Say so as the thing it most likely is, with the command that works.
+        localNote = t().kitRefused;
+        draw();
+        return null;
+      }
+      return file.text().then(function (text) {
+        return call("/api/map", { name: file.name, text: text });
+      }).then(poll);
+    }).catch(function (e) {
       localNote = e.message || t().sendFail;
       draw();
     });

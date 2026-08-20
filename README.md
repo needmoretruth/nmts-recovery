@@ -163,7 +163,16 @@ Your account code is the master key for your account — every other key derives
 the page has handed over a list file, the program asks for the code in the terminal window it was
 started from, and the page tells you to look there.
 
-There is no route in the control channel that accepts an account code, and a test asserts it.
+The page will not even read a file that is not a recovery list: a list is a JSON document, so
+the page looks at the first few bytes and stops there if they are not one. That check exists
+because of the **recovery kit** — the one-file form that holds the list *and* the account code.
+A kit chosen in the page's file picker would otherwise be read into the browser whole. If you
+saved only a kit, the page says so and gives you the command: `nmts-recovery --map <that file>`,
+which asks for nothing, because the kit already carries the code.
+
+No route in the control channel takes an account code, and a test asserts it — including a test
+that offers a real kit to the route that accepts file text, because that is how a code could
+actually have arrived.
 
 ### Why a page served on your own machine can be trusted at all
 

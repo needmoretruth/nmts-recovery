@@ -100,7 +100,10 @@ pub fn sui_address(seed: &[u8; 32]) -> String {
     Blake2Digest::update(&mut h, [ED25519_FLAG]);
     Blake2Digest::update(&mut h, verifying.as_bytes());
     let out = h.finalize();
-    format!("0x{}", out.iter().map(|b| format!("{b:02x}")).collect::<String>())
+    format!(
+        "0x{}",
+        out.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    )
 }
 
 /// A wallet seed in the form a Sui wallet imports: bech32 over the flag byte and the 32-byte seed.
@@ -174,7 +177,10 @@ mod tests {
         assert!(f.chars().filter(|c| *c == '-').count() == 3, "{f}");
         assert_eq!(f, f.to_uppercase(), "{f}");
         // Different ids, different fingerprints — the whole point of printing one.
-        assert_ne!(fingerprint("AAAAAAAAAAAAAAAAAAAAAA"), fingerprint("BAAAAAAAAAAAAAAAAAAAAA"));
+        assert_ne!(
+            fingerprint("AAAAAAAAAAAAAAAAAAAAAA"),
+            fingerprint("BAAAAAAAAAAAAAAAAAAAAA")
+        );
     }
 
     /// ⛔ Secrets appear only when asked for. A default that printed private keys would put them in
@@ -189,8 +195,15 @@ mod tests {
         assert!(loud.wallets.iter().all(|w| w.secret.is_some()));
         // The public half is identical either way — asking for secrets must not change an address.
         assert_eq!(
-            quiet.wallets.iter().map(|w| w.address.clone()).collect::<Vec<_>>(),
-            loud.wallets.iter().map(|w| w.address.clone()).collect::<Vec<_>>(),
+            quiet
+                .wallets
+                .iter()
+                .map(|w| w.address.clone())
+                .collect::<Vec<_>>(),
+            loud.wallets
+                .iter()
+                .map(|w| w.address.clone())
+                .collect::<Vec<_>>(),
         );
     }
 

@@ -100,9 +100,21 @@ fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
     let d = derive::from_keys(&keys, a.wallets, a.secrets);
 
     println!("\n{}", msg::DERIVE_HEAD.get(lang));
-    println!("  {:<16} {}", msg::DERIVE_ACCOUNT_ID.get(lang), d.account_id);
-    println!("  {:<16} {}", msg::DERIVE_FINGERPRINT.get(lang), d.fingerprint);
-    println!("  {:<16} {}", msg::DERIVE_PUBLIC_CODE.get(lang), d.public_code);
+    println!(
+        "  {:<16} {}",
+        msg::DERIVE_ACCOUNT_ID.get(lang),
+        d.account_id
+    );
+    println!(
+        "  {:<16} {}",
+        msg::DERIVE_FINGERPRINT.get(lang),
+        d.fingerprint
+    );
+    println!(
+        "  {:<16} {}",
+        msg::DERIVE_PUBLIC_CODE.get(lang),
+        d.public_code
+    );
     for w in &d.wallets {
         println!(
             "  {:<16} {}",
@@ -118,7 +130,12 @@ fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
             if let Some(secret) = &w.secret {
                 println!(
                     "  {:<16} {}",
-                    format!("{} {} {}", msg::DERIVE_WALLET.get(lang), w.index, msg::DERIVE_SECRET_KEY.get(lang)),
+                    format!(
+                        "{} {} {}",
+                        msg::DERIVE_WALLET.get(lang),
+                        w.index,
+                        msg::DERIVE_SECRET_KEY.get(lang)
+                    ),
                     secret
                 );
             }
@@ -149,12 +166,18 @@ fn find_on_network(a: &args::Args, lang: Lang) -> Result<(RecoveryManifest, Stri
     let keys = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
 
     let rpcs: Vec<String> = if a.rpcs.is_empty() {
-        discover::DEFAULT_RPCS.iter().map(|s| s.to_string()).collect()
+        discover::DEFAULT_RPCS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     } else {
         a.rpcs.clone()
     };
     let aggregators: Vec<String> = if a.aggregators.is_empty() {
-        source::DEFAULT_AGGREGATORS.iter().map(|s| s.to_string()).collect()
+        source::DEFAULT_AGGREGATORS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     } else {
         a.aggregators.clone()
     };
@@ -197,7 +220,10 @@ fn find_on_network(a: &args::Args, lang: Lang) -> Result<(RecoveryManifest, Stri
 }
 
 /// Open a recovery list — or a recovery kit, which has one inside it — from a file.
-fn open_from_file(a: &args::Args, lang: Lang) -> Result<(RecoveryManifest, Option<String>), String> {
+fn open_from_file(
+    a: &args::Args,
+    lang: Lang,
+) -> Result<(RecoveryManifest, Option<String>), String> {
     let raw = std::fs::read_to_string(&a.map).map_err(|e| format!("{}: {e}", a.map.display()))?;
     // A recovery kit has the list inside it, so either file gets a person to the same place.
     let (wrapper, code_in_kit) = if kitfile::looks_like_kit(&raw) {
@@ -260,7 +286,10 @@ fn proceed(
     a: &args::Args,
     lang: Lang,
 ) -> Result<ExitCode, String> {
-    let out_dir = a.out.clone().unwrap_or_else(|| Path::new(".").to_path_buf());
+    let out_dir = a
+        .out
+        .clone()
+        .unwrap_or_else(|| Path::new(".").to_path_buf());
     let planned = restore::plan(manifest, &out_dir, a.only.as_deref(), own_quilt);
     if planned.is_empty() {
         println!("{}", msg::NOTHING_MATCHED.get(lang));
@@ -295,9 +324,16 @@ fn parse_list(raw: &str, lang: Lang) -> Result<mapfile::MapFile, String> {
         Err(mapfile::MapFileError::NotAMap(why)) => {
             Err(format!("{} — {why}.", msg::MAP_NOT_A_MAP.get(lang)))
         }
-        Err(mapfile::MapFileError::TooNew { wrapper, nrm, min_tool }) => Err(
-            mapfile::too_new_sentence(wrapper, nrm, min_tool.as_deref(), lang),
-        ),
+        Err(mapfile::MapFileError::TooNew {
+            wrapper,
+            nrm,
+            min_tool,
+        }) => Err(mapfile::too_new_sentence(
+            wrapper,
+            nrm,
+            min_tool.as_deref(),
+            lang,
+        )),
     }
 }
 
@@ -385,7 +421,9 @@ fn print_list_about(manifest: &RecoveryManifest, lang: Lang) {
             .replace("{version}", meta.app_version.as_deref().unwrap_or(unknown))
             .replace(
                 "{network}",
-                storage.and_then(|s| s.network.as_deref()).unwrap_or(unknown)
+                storage
+                    .and_then(|s| s.network.as_deref())
+                    .unwrap_or(unknown)
             )
             .replace(
                 "{chain}",
@@ -431,7 +469,12 @@ fn print_fetch_plan(planned: &[restore::PlannedItem<'_>], endpoints: &[String], 
             }
         };
         for (blob, _) in refs {
-            println!("  curl -fL -o {} {}{}", blob.file_name(), base, blob.url_path());
+            println!(
+                "  curl -fL -o {} {}{}",
+                blob.file_name(),
+                base,
+                blob.url_path()
+            );
         }
     }
 }

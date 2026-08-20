@@ -87,8 +87,9 @@ pub enum MapFileError {
 
 /// Read a wrapper, refusing anything that is not one.
 pub fn parse(text: &str) -> Result<MapFile, MapFileError> {
-    let doc: MapFile = serde_json::from_str(text)
-        .map_err(|e| MapFileError::NotAMap(format!("the contents are not a recovery list ({e})")))?;
+    let doc: MapFile = serde_json::from_str(text).map_err(|e| {
+        MapFileError::NotAMap(format!("the contents are not a recovery list ({e})"))
+    })?;
     if doc.format != FORMAT_MARKER {
         return Err(MapFileError::NotAMap(format!(
             "the format marker says \"{}\"",
@@ -115,7 +116,12 @@ pub fn parse(text: &str) -> Result<MapFile, MapFileError> {
 /// ⛔ Written HERE, once, because two callers needed it — the terminal and the control window —
 /// and a refusal that says two different things depending on which door you came in is a refusal
 /// nobody can be told to look up. It also sits next to the two ceilings it quotes.
-pub fn too_new_sentence(wrapper: u64, nrm: u64, min_tool: Option<&str>, lang: crate::args::Lang) -> String {
+pub fn too_new_sentence(
+    wrapper: u64,
+    nrm: u64,
+    min_tool: Option<&str>,
+    lang: crate::args::Lang,
+) -> String {
     // When the list names the version it needs, say THAT: "get 0.2.0" is something a person can
     // act on, and "this is newer than this program" is not. The format numbers follow either way,
     // because they are what somebody re-implementing this would need.
@@ -236,7 +242,12 @@ mod tests {
                    "about": {"tool_url": "https://evil.example/download"}"#,
             );
         let err = parse(&hostile).expect_err("a future wrapper is refused");
-        let MapFileError::TooNew { wrapper, nrm, min_tool } = err else {
+        let MapFileError::TooNew {
+            wrapper,
+            nrm,
+            min_tool,
+        } = err
+        else {
             panic!("expected TooNew");
         };
         for lang in [crate::args::Lang::En, crate::args::Lang::Ko] {
@@ -258,6 +269,9 @@ mod tests {
     #[test]
     fn reads_a_document_at_the_current_ceiling() {
         let at_ceiling = V2.replace("\"nrm\": 2", &format!("\"nrm\": {MAX_NRM_VERSION}"));
-        assert_eq!(parse(&at_ceiling).expect("today's format must open").nrm, MAX_NRM_VERSION);
+        assert_eq!(
+            parse(&at_ceiling).expect("today's format must open").nrm,
+            MAX_NRM_VERSION
+        );
     }
 }

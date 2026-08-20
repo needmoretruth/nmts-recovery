@@ -215,7 +215,7 @@ pub fn parse(argv: &[String]) -> Parsed {
                         crate::mapfile::MAX_NRM_VERSION
                     ),
                     0,
-                )
+                );
             }
             "--list" => {
                 a.mode = Mode::List;
@@ -389,7 +389,10 @@ pub fn parse(argv: &[String]) -> Parsed {
         );
     }
     if a.owner.is_some() && !a.find {
-        return Parsed::Print(format!("--owner only means something with --find.\n\n{USAGE}"), 2);
+        return Parsed::Print(
+            format!("--owner only means something with --find.\n\n{USAGE}"),
+            2,
+        );
     }
     if a.mode == Mode::Restore && a.out.is_none() {
         return Parsed::Print(format!("--out is required when restoring.\n\n{USAGE}"), 2);
@@ -481,7 +484,10 @@ mod tests {
             "https://b.example",
         ])) {
             Parsed::Run(a) => {
-                assert_eq!(a.aggregators, vec!["https://a.example", "https://b.example"]);
+                assert_eq!(
+                    a.aggregators,
+                    vec!["https://a.example", "https://b.example"]
+                );
             }
             _ => panic!("did not parse"),
         }
@@ -504,7 +510,10 @@ mod tests {
     fn a_wallet_count_that_is_not_one_is_refused() {
         for bad in ["0", "no", "1000"] {
             assert!(
-                matches!(parse(&v(&["--derive", "--wallets", bad])), Parsed::Print(_, 2)),
+                matches!(
+                    parse(&v(&["--derive", "--wallets", bad])),
+                    Parsed::Print(_, 2)
+                ),
                 "--wallets {bad} was accepted"
             );
         }

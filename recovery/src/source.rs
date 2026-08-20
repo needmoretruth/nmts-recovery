@@ -338,8 +338,9 @@ impl BlobSource for DirSource {
         // No length cap here on purpose: these bytes are already on the caller's own disk, so a cap
         // would refuse a file the caller can see rather than protect them from anything.
         let path = self.dir.join(r.file_name());
-        let mut file = File::open(&path)
-            .map_err(|e| SourceError::Unavailable(format!("{} could not be read ({e})", path.display())))?;
+        let mut file = File::open(&path).map_err(|e| {
+            SourceError::Unavailable(format!("{} could not be read ({e})", path.display()))
+        })?;
         consume(&mut file).map_err(SourceError::Consumer)
     }
 
@@ -391,7 +392,10 @@ mod tests {
     fn an_unknown_chain_leaves_the_order_alone() {
         let out = aggregators_for_chain(Some("some-future-chain"), &[]);
         assert_eq!(out, DEFAULT_AGGREGATORS.to_vec());
-        assert_eq!(aggregators_for_chain(None, &[]), DEFAULT_AGGREGATORS.to_vec());
+        assert_eq!(
+            aggregators_for_chain(None, &[]),
+            DEFAULT_AGGREGATORS.to_vec()
+        );
     }
 
     /// The endpoints the list recorded come LAST, and never twice.
@@ -407,7 +411,10 @@ mod tests {
                 "https://someone-elses.example".to_string(),
             ],
         );
-        assert_eq!(out.last().map(String::as_str), Some("https://someone-elses.example"));
+        assert_eq!(
+            out.last().map(String::as_str),
+            Some("https://someone-elses.example")
+        );
         assert_eq!(
             out.iter().filter(|e| e.contains("walrus-mainnet")).count(),
             1,
@@ -419,7 +426,10 @@ mod tests {
     #[test]
     fn an_explicit_aggregator_beats_everything_the_list_says() {
         let named = vec!["https://mine.example".to_string()];
-        let out = endpoints_for(&named, &manifest_with(Some("testnet"), &["https://theirs.example"]));
+        let out = endpoints_for(
+            &named,
+            &manifest_with(Some("testnet"), &["https://theirs.example"]),
+        );
         assert_eq!(out, named);
     }
 
@@ -428,7 +438,10 @@ mod tests {
         let out = endpoints_for(&[], &manifest_with(Some("testnet"), &[]));
         assert!(out[0].contains("walrus-testnet"), "{out:?}");
         // A list with no block at all: the built-in order, exactly as before this existed.
-        assert_eq!(endpoints_for(&[], &manifest_with(None, &[])), DEFAULT_AGGREGATORS.to_vec());
+        assert_eq!(
+            endpoints_for(&[], &manifest_with(None, &[])),
+            DEFAULT_AGGREGATORS.to_vec()
+        );
     }
 
     #[test]
@@ -438,7 +451,10 @@ mod tests {
         assert_eq!(expected_stream_len(1), 72 + 1 + 16);
         // Exactly one full chunk is one chunk, not two.
         assert_eq!(expected_stream_len(CHUNK_SIZE), 72 + CHUNK_SIZE + 16);
-        assert_eq!(expected_stream_len(CHUNK_SIZE + 1), 72 + CHUNK_SIZE + 1 + 32);
+        assert_eq!(
+            expected_stream_len(CHUNK_SIZE + 1),
+            72 + CHUNK_SIZE + 1 + 32
+        );
     }
 
     #[test]

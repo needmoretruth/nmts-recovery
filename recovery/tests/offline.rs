@@ -21,7 +21,6 @@ use common::{sha256, Fixture, Padding};
 use nmts_crypto::b64;
 use nmts_crypto::codes::AccountCode;
 
-
 fn restored(fx: &Fixture, rel: &str) -> Vec<u8> {
     fs::read(fx.path("out").join(rel)).unwrap_or_else(|e| panic!("{rel} was not restored: {e}"))
 }
@@ -76,7 +75,10 @@ fn parts_served_in_the_wrong_order_are_refused_rather_than_written() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("where part 0 of 2 belongs"), "{text}");
     // ⛔ And nothing is left on disk that could be mistaken for the file.
-    assert!(!fx.path("out/swapped.bin").exists(), "a bad file was written");
+    assert!(
+        !fx.path("out/swapped.bin").exists(),
+        "a bad file was written"
+    );
     assert_eq!(
         fs::read_dir(fx.path("out")).expect("out dir").count(),
         0,
@@ -100,10 +102,16 @@ fn wrong_order_is_caught_even_when_there_is_no_content_hash_to_fall_back_on() {
     fx.write_map(vec![item]);
 
     let out = fx.restore();
-    assert!(!out.status.success(), "a scrambled file was accepted with nothing left to catch it");
+    assert!(
+        !out.status.success(),
+        "a scrambled file was accepted with nothing left to catch it"
+    );
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("where part 0 of 2 belongs"), "{text}");
-    assert!(!fx.path("out/swapped.bin").exists(), "a scrambled file was written");
+    assert!(
+        !fx.path("out/swapped.bin").exists(),
+        "a scrambled file was written"
+    );
 }
 
 /// ⭐ SIZE PADDING. A stored part may be sealed larger than the bytes it contributes,
@@ -125,7 +133,10 @@ fn a_padded_part_gives_back_the_real_bytes_and_not_the_padding() {
         &real,
         1,
         false,
-        Some(Padding { bytes: 4096, recorded: true }),
+        Some(Padding {
+            bytes: 4096,
+            recorded: true,
+        }),
     );
     fx.write_map(vec![item]);
 
@@ -150,7 +161,10 @@ fn padding_on_the_tail_of_a_multi_part_file_is_taken_off_again() {
         &real,
         3,
         false,
-        Some(Padding { bytes: 65_536, recorded: true }),
+        Some(Padding {
+            bytes: 65_536,
+            recorded: true,
+        }),
     );
     fx.write_map(vec![item]);
 
@@ -177,7 +191,10 @@ fn padding_the_list_did_not_record_is_still_refused() {
         b"nineteen bytes here",
         1,
         false,
-        Some(Padding { bytes: 4096, recorded: false }),
+        Some(Padding {
+            bytes: 4096,
+            recorded: false,
+        }),
     );
     fx.write_map(vec![item]);
 
@@ -185,7 +202,10 @@ fn padding_the_list_did_not_record_is_still_refused() {
     assert!(!out.status.success(), "unrecorded padding was accepted");
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("the part itself says"), "{text}");
-    assert!(!fx.path("out/docs/notes.txt").exists(), "a padded file was written");
+    assert!(
+        !fx.path("out/docs/notes.txt").exists(),
+        "a padded file was written"
+    );
 }
 
 /// A list is a file somebody can edit. Changing the recorded size must not produce a file.
@@ -319,7 +339,11 @@ fn an_existing_file_is_left_alone_unless_overwrite_is_asked_for() {
         fx.path("blobs").to_str().expect("utf8"),
         "--overwrite",
     ]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stdout));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
     assert_eq!(restored(&fx, "a.bin"), b"new bytes");
 }
 
@@ -359,7 +383,11 @@ fn only_restores_what_was_asked_for() {
         "--only",
         "/keep",
     ]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stdout));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
     assert_eq!(restored(&fx, "keep/a.txt"), b"wanted");
     assert!(!fx.path("out/other").exists());
 }
@@ -372,11 +400,17 @@ fn an_escaped_folder_name_stays_one_folder() {
     fx.write_map(vec![fx.add_file("x.txt", "/a／b", b"one folder", 1, false)]);
 
     let out = fx.restore();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stdout));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
     assert_eq!(restored(&fx, "a／b/x.txt"), b"one folder");
-    assert!(!Path::new(&fx.path("out/a/b")).exists(), "it split into two folders");
+    assert!(
+        !Path::new(&fx.path("out/a/b")).exists(),
+        "it split into two folders"
+    );
 }
-
 
 // --- the recovery kit: one file with everything in it -------------------------------------------
 
@@ -400,10 +434,17 @@ fn a_recovery_kit_alone_gives_the_files_back() {
         .output()
         .expect("run");
     let said = String::from_utf8_lossy(&out.stdout).to_string();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(said.contains("recovery list is inside it"), "{said}");
     // ⛔ And it says so out loud. Using a code without asking is right here; doing it quietly is not.
-    assert!(said.contains("carries your account code in the clear"), "{said}");
+    assert!(
+        said.contains("carries your account code in the clear"),
+        "{said}"
+    );
     assert_eq!(restored(&fx, "docs/kit.txt.restored"), text);
 }
 
@@ -442,11 +483,19 @@ fn a_kit_and_a_list_that_disagree_about_the_account_are_refused() {
 fn deriving_from_a_code_alone_prints_the_public_values_and_no_secrets() {
     let fx = Fixture::new();
     let out = Command::new(env!("CARGO_BIN_EXE_nmts-recovery"))
-        .args(["--derive", "--code-file", fx.path("code.txt").to_str().expect("utf8")])
+        .args([
+            "--derive",
+            "--code-file",
+            fx.path("code.txt").to_str().expect("utf8"),
+        ])
         .args(["--lang", "en"])
         .output()
         .expect("run");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let said = String::from_utf8_lossy(&out.stdout).to_string();
 
     let keys = nmts_crypto::kdf::derive(&fx.code).expect("derive");
@@ -454,8 +503,14 @@ fn deriving_from_a_code_alone_prints_the_public_values_and_no_secrets() {
     assert!(said.contains("Public code"), "{said}");
     assert!(said.contains("0x"), "no wallet address: {said}");
     // ⛔ Not by default. Somebody checking an account id must not get a spendable key for free.
-    assert!(!said.contains("suiprivkey"), "a private key was printed unasked: {said}");
-    assert!(said.contains("--secrets"), "it does not say how to ask for them: {said}");
+    assert!(
+        !said.contains("suiprivkey"),
+        "a private key was printed unasked: {said}"
+    );
+    assert!(
+        said.contains("--secrets"),
+        "it does not say how to ask for them: {said}"
+    );
 }
 
 /// And with `--secrets`, the warning comes BEFORE the keys.
@@ -468,10 +523,18 @@ fn asking_for_secrets_prints_them_after_the_warning_about_them() {
         .args(["--lang", "en"])
         .output()
         .expect("run");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let said = String::from_utf8_lossy(&out.stdout).to_string();
 
-    assert_eq!(said.matches("suiprivkey").count(), 2, "two wallets, two keys: {said}");
+    assert_eq!(
+        said.matches("suiprivkey").count(),
+        2,
+        "two wallets, two keys: {said}"
+    );
     let warning = said.find("PRIVATE KEYS FOLLOW").expect("no warning");
     let first_key = said.find("suiprivkey").expect("no key");
     assert!(warning < first_key, "the warning came after the keys");
@@ -493,7 +556,11 @@ fn a_restored_file_keeps_the_date_the_list_recorded() {
     fx.write_map(vec![item]);
 
     let out = fx.restore();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let meta = fs::metadata(fx.path("out").join("dated.txt")).expect("restored file");
     let modified = meta
@@ -524,7 +591,11 @@ fn a_file_the_list_gave_no_date_is_left_at_the_time_of_the_recovery() {
     fx.write_map(vec![item]);
 
     let out = fx.restore();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let modified = fs::metadata(fx.path("out").join("undated.txt"))
         .expect("restored file")
@@ -534,7 +605,10 @@ fn a_file_the_list_gave_no_date_is_left_at_the_time_of_the_recovery() {
         .expect("after the epoch")
         .as_secs();
     // Some time after this format was designed, and not the fixture's date either.
-    assert!(modified > 1_750_000_000, "left at {modified}, which is not now");
+    assert!(
+        modified > 1_750_000_000,
+        "left at {modified}, which is not now"
+    );
     assert_ne!(modified, common::UPDATED_AT_UNIX);
 }
 
@@ -562,7 +636,10 @@ fn the_list_says_who_wrote_it_and_which_chain_it_belongs_to() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("NMTS 9.9.9"), "{text}");
     assert!(text.contains("walrus/testnet"), "{text}");
-    assert!(text.contains("https://example.invalid/RECOVERY-MANIFEST.md"), "{text}");
+    assert!(
+        text.contains("https://example.invalid/RECOVERY-MANIFEST.md"),
+        "{text}"
+    );
 }
 
 /// A list that does NOT carry the block says nothing extra — and still lists its files.

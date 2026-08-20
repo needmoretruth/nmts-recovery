@@ -82,18 +82,22 @@ impl<'a> PlannedItem<'a> {
             // A quilted item is one patch inside one shared blob, so it has exactly one part and
             // the patch is what an aggregator serves it by. Reading it as a whole blob would hand
             // back the entire cohort — everyone's ciphertext, not this file's.
-            let r = match (self.item.quilt.as_ref().and_then(Quilt::placement), self.item.parts.len()) {
-                (Some(Placement::Absolute { patch_id, .. }), 1) => BlobRef::Patch(patch_id.to_owned()),
+            let r = match (
+                self.item.quilt.as_ref().and_then(Quilt::placement),
+                self.item.parts.len(),
+            ) {
+                (Some(Placement::Absolute { patch_id, .. }), 1) => {
+                    BlobRef::Patch(patch_id.to_owned())
+                }
                 (Some(Placement::OwnQuilt { identifier }), 1) => BlobRef::InQuilt {
-                    quilt_id: self.own_quilt.ok_or(RefProblem::OwnQuiltUnknown)?.to_owned(),
+                    quilt_id: self
+                        .own_quilt
+                        .ok_or(RefProblem::OwnQuiltUnknown)?
+                        .to_owned(),
                     identifier: identifier.to_owned(),
                 },
                 // Not quilted (or a shape the parse already refuses): the part names its own blob.
-                _ => BlobRef::Whole(
-                    part.blob_id
-                        .clone()
-                        .ok_or(RefProblem::OwnQuiltUnknown)?,
-                ),
+                _ => BlobRef::Whole(part.blob_id.clone().ok_or(RefProblem::OwnQuiltUnknown)?),
             };
             out.push((r, part.stream_plaintext_len()));
         }
@@ -275,7 +279,10 @@ fn rfc3339_seconds(s: &str) -> Option<i64> {
         None => 0,
         Some(b'Z') | Some(b'z') => 0,
         Some(sign @ (b'+' | b'-')) => {
-            let (oh, om) = (rest.get(1..3)?.parse::<i64>().ok()?, rest.get(4..6)?.parse::<i64>().ok()?);
+            let (oh, om) = (
+                rest.get(1..3)?.parse::<i64>().ok()?,
+                rest.get(4..6)?.parse::<i64>().ok()?,
+            );
             let magnitude = oh * 3600 + om * 60;
             if *sign == b'+' {
                 magnitude
@@ -303,7 +310,11 @@ fn restore_date(dest: &Path, item: &Item) -> Option<Note> {
     }?;
     // Opened for writing because that is what setting a time requires; the file is already
     // complete and renamed into place, so nothing here can damage it.
-    match fs::File::options().write(true).open(dest).and_then(|f| f.set_modified(when)) {
+    match fs::File::options()
+        .write(true)
+        .open(dest)
+        .and_then(|f| f.set_modified(when))
+    {
         Ok(()) => None,
         Err(_) => Some(Note::DateNotRestored),
     }
@@ -341,10 +352,12 @@ pub fn restore_item(
 
     let dek = decode_dek(&item.dek)?;
     let mut notes = Vec::new();
-    let total = u32::try_from(refs.len()).map_err(|_| "that file has more parts than a part counter can hold".to_string())?;
+    let total = u32::try_from(refs.len())
+        .map_err(|_| "that file has more parts than a part counter can hold".to_string())?;
 
     let parent = planned.dest.parent().unwrap_or(Path::new("."));
-    fs::create_dir_all(parent).map_err(|e| format!("{} could not be created ({e})", parent.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("{} could not be created ({e})", parent.display()))?;
     // The temporary sits in the SAME directory as the destination so the final rename is within
     // one filesystem and therefore atomic. A temp in /tmp would turn it into a copy that can fail
     // halfway with the destination already replaced.
@@ -353,7 +366,8 @@ pub fn restore_item(
     let mut hasher = Sha256::new();
 
     let result = (|| -> Result<(), String> {
-        let mut file = fs::File::create(&tmp).map_err(|e| format!("{} could not be written ({e})", tmp.display()))?;
+        let mut file = fs::File::create(&tmp)
+            .map_err(|e| format!("{} could not be written ({e})", tmp.display()))?;
         for (index, (blob, part_len)) in refs.iter().enumerate() {
             let position = u32::try_from(index).expect("index < total, which is a u32");
             // ⛔ THE PLACEMENT THIS PART MUST CLAIM comes from the loop counter — the position
@@ -394,11 +408,14 @@ pub fn restore_item(
                     Ok(())
                 })
                 .map_err(|e: SourceError| match e {
-                    SourceError::Unavailable(m) => format!("part {position} could not be fetched: {m}"),
+                    SourceError::Unavailable(m) => {
+                        format!("part {position} could not be fetched: {m}")
+                    }
                     SourceError::Consumer(m) => format!("part {position}: {m}"),
                 })?;
         }
-        file.flush().map_err(|e| format!("the file could not be finished ({e})"))?;
+        file.flush()
+            .map_err(|e| format!("the file could not be finished ({e})"))?;
 
         if written != item.size {
             return Err(format!(
@@ -414,7 +431,10 @@ pub fn restore_item(
                 let want = nmts_crypto::b64::decode(expected)
                     .map_err(|_| "the list's recorded content hash is not readable".to_string())?;
                 if want != got {
-                    return Err("the reassembled file does not match the hash the list recorded".to_string());
+                    return Err(
+                        "the reassembled file does not match the hash the list recorded"
+                            .to_string(),
+                    );
                 }
             }
             None => notes.push(Note::NoContentHash),
@@ -424,13 +444,17 @@ pub fn restore_item(
 
     match result {
         Ok(()) => {
-            fs::rename(&tmp, &planned.dest)
-                .map_err(|e| format!("{} could not be put in place ({e})", planned.dest.display()))?;
+            fs::rename(&tmp, &planned.dest).map_err(|e| {
+                format!("{} could not be put in place ({e})", planned.dest.display())
+            })?;
             // ⭐ AFTER the rename, and only then. The date is the last thing a restored file needs
             //    and the first thing that should never be allowed to hold up its bytes: an error
             //    here becomes a note, not a failure (owner directive, 2026-08-19).
             notes.extend(restore_date(&planned.dest, item));
-            Ok(Outcome { notes, bytes: written })
+            Ok(Outcome {
+                notes,
+                bytes: written,
+            })
         }
         Err(e) => {
             // Leaving the temporary behind would look like a partial file that might be usable.
@@ -465,16 +489,15 @@ fn decrypt_part(
     reader
         .read_exact(&mut header_bytes)
         .map_err(|_| "the stored bytes are too short to be an encrypted part".to_string())?;
-    let header = Header::parse(&header_bytes).map_err(|e| format!("the part's header is not readable ({e})"))?;
+    let header = Header::parse(&header_bytes)
+        .map_err(|e| format!("the part's header is not readable ({e})"))?;
     // Both of these compare the SEALED header against something the header did not supply.
-    header
-        .verify_placement(placement)
-        .map_err(|_| {
-            format!(
-                "this is part {} of {}, where part {} of {} belongs",
-                header.part_index, header.part_total, placement.index, placement.total
-            )
-        })?;
+    header.verify_placement(placement).map_err(|_| {
+        format!(
+            "this is part {} of {}, where part {} of {} belongs",
+            header.part_index, header.part_total, placement.index, placement.total
+        )
+    })?;
     if header.plaintext_len != map_says {
         return Err(format!(
             "the list says this part is {map_says} bytes and the part itself says {}",
@@ -499,9 +522,12 @@ fn decrypt_part(
             .push(&buf[..n])
             .map_err(|e| format!("the stored bytes failed their authentication check ({e})"))?;
         if !plain.is_empty() {
-            let take = usize::try_from(left_to_keep).unwrap_or(usize::MAX).min(plain.len());
+            let take = usize::try_from(left_to_keep)
+                .unwrap_or(usize::MAX)
+                .min(plain.len());
             if take > 0 {
-                out.write_all(&plain[..take]).map_err(|e| format!("the file could not be written ({e})"))?;
+                out.write_all(&plain[..take])
+                    .map_err(|e| format!("the file could not be written ({e})"))?;
                 hasher.update(&plain[..take]);
                 left_to_keep -= take as u64;
                 on_bytes(take as u64);
@@ -526,7 +552,8 @@ fn decrypt_part(
 
 /// The item's DEK, which the list carries raw because the list is itself one envelope.
 fn decode_dek(b64: &str) -> Result<[u8; DEK_LEN], String> {
-    let raw = nmts_crypto::b64::decode(b64).map_err(|_| "the list's stored key is not readable".to_string())?;
+    let raw = nmts_crypto::b64::decode(b64)
+        .map_err(|_| "the list's stored key is not readable".to_string())?;
     raw.try_into()
         .map_err(|_| "the list's stored key is the wrong length".to_string())
 }

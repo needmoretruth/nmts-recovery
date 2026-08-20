@@ -39,7 +39,9 @@ fn a_real_blob_on_walrus_comes_back_as_the_original_file() {
     fs::create_dir_all(dir.path().join("out")).expect("out");
 
     // A plaintext with a shape a corrupted recovery could not accidentally reproduce.
-    let plaintext: Vec<u8> = (0..40_000u32).map(|i| (i.wrapping_mul(31) % 251) as u8).collect();
+    let plaintext: Vec<u8> = (0..40_000u32)
+        .map(|i| (i.wrapping_mul(31) % 251) as u8)
+        .collect();
 
     let code = AccountCode::generate();
     fs::write(dir.path().join("code.txt"), code.display()).expect("code");
@@ -117,8 +119,14 @@ fn a_real_blob_on_walrus_comes_back_as_the_original_file() {
 
     // ⛔ No --blobs-dir. The bytes come off the real network, through the program's own fetch path.
     let out = Command::new(env!("CARGO_BIN_EXE_nmts-recovery"))
-        .args(["--map", dir.path().join("map.nmtsmap").to_str().expect("utf8")])
-        .args(["--code-file", dir.path().join("code.txt").to_str().expect("utf8")])
+        .args([
+            "--map",
+            dir.path().join("map.nmtsmap").to_str().expect("utf8"),
+        ])
+        .args([
+            "--code-file",
+            dir.path().join("code.txt").to_str().expect("utf8"),
+        ])
         .args(["--out", dir.path().join("out").to_str().expect("utf8")])
         .args(["--aggregator", AGGREGATOR, "--lang", "en"])
         .output()

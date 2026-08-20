@@ -119,9 +119,8 @@ mod tests {
     ///    parser must work whatever that language was.
     #[test]
     fn the_heading_language_does_not_matter() {
-        let korean = format!(
-            "# NMTS 복구 키트\n기계가 읽는 부분\n\n{DATA_BEGIN}\n{BODY}\n{DATA_END}\n"
-        );
+        let korean =
+            format!("# NMTS 복구 키트\n기계가 읽는 부분\n\n{DATA_BEGIN}\n{BODY}\n{DATA_END}\n");
         assert!(parse(&korean).is_ok());
     }
 
@@ -148,7 +147,10 @@ mod tests {
     #[test]
     fn a_kit_from_the_future_is_refused_rather_than_guessed_at() {
         let newer = kit(&BODY.replace("\"version\": 2", "\"version\": 3"));
-        assert!(matches!(parse(&newer), Err(KitFileError::TooNew { version: 3 })));
+        assert!(matches!(
+            parse(&newer),
+            Err(KitFileError::TooNew { version: 3 })
+        ));
     }
 
     /// The first kits carried no list. Reading one should say what is missing, not pretend.

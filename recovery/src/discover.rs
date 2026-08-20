@@ -140,9 +140,9 @@ pub fn find(
             let manifest = match RecoveryManifest::decrypt(&keys.data_key, &sealed) {
                 Ok(m) => m,
                 Err(e) => {
-                    search
-                        .problems
-                        .push(format!("{quilt_id}: a patch under this account's name did not open ({e})"));
+                    search.problems.push(format!(
+                        "{quilt_id}: a patch under this account's name did not open ({e})"
+                    ));
                     continue;
                 }
             };
@@ -197,11 +197,7 @@ fn owned_blob_ids(agent: &ureq::Agent, rpcs: &[String], owner: &str) -> Result<O
     ))
 }
 
-fn owned_blob_ids_from(
-    agent: &ureq::Agent,
-    rpc: &str,
-    owner: &str,
-) -> Result<OwnedBlobs, String> {
+fn owned_blob_ids_from(agent: &ureq::Agent, rpc: &str, owner: &str) -> Result<OwnedBlobs, String> {
     let mut blob_ids = Vec::new();
     let mut cursor = serde_json::Value::Null;
     for page in 0..MAX_PAGES {
@@ -260,7 +256,9 @@ fn owned_blob_ids_from(
             {
                 match blob_id_from_u256(decimal) {
                     Some(id) => blob_ids.push(id),
-                    None => return Err(format!("gave a blob id this build cannot read ({decimal})")),
+                    None => {
+                        return Err(format!("gave a blob id this build cannot read ({decimal})"))
+                    }
                 }
             }
         }
@@ -434,7 +432,8 @@ mod tests {
     /// `content.fields.blob_id`, the string is what Walrus calls the same blob.
     #[test]
     fn a_blob_id_is_the_little_endian_bytes_of_the_number_sui_stores() {
-        let decimal = "99948925563890497458821702329675998710172654685512294950270493148941086336630";
+        let decimal =
+            "99948925563890497458821702329675998710172654685512294950270493148941086336630";
         assert_eq!(
             blob_id_from_u256(decimal).as_deref(),
             Some("dqYHNuwRK5vsFI-pHDhEGtHIEOy_H-zkXFvTj04W-dw"),

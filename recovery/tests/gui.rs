@@ -188,7 +188,9 @@ fn two_files() -> (Fixture, Vec<u8>, Vec<u8>) {
     let letter = b"the list is the index, and the code is the key".to_vec();
     // Big enough to cross the tool's read chunk more than once, so the progress path is exercised
     // rather than skipped by a file that arrives in one go.
-    let big: Vec<u8> = (0..900_000u32).map(|i| (i.wrapping_mul(37) % 251) as u8).collect();
+    let big: Vec<u8> = (0..900_000u32)
+        .map(|i| (i.wrapping_mul(37) % 251) as u8)
+        .collect();
     let a = fx.add_file("letter.txt", "/docs", &letter, 1, false);
     let b = fx.add_file("big.bin", "/", &big, 3, false);
     fx.write_map(vec![a, b]);
@@ -238,15 +240,26 @@ fn the_window_gives_the_files_back() {
         })
         .to_string(),
     );
-    assert_eq!(started.status, 200, "the restore was refused: {}", started.body);
+    assert_eq!(
+        started.status, 200,
+        "the restore was refused: {}",
+        started.body
+    );
 
     let done = w.wait_for("finished");
-    assert_eq!(done["job"]["failed"], 0, "something failed: {}", done["job"]["lines"]);
+    assert_eq!(
+        done["job"]["failed"], 0,
+        "something failed: {}",
+        done["job"]["lines"]
+    );
     assert_eq!(done["job"]["done"], 2);
 
     // ⛔ The bytes, not the report. A window that says "2 of 2 done" over an empty folder is the
     //    failure this test exists to catch.
-    assert_eq!(std::fs::read(out.join("docs/letter.txt")).expect("letter"), letter);
+    assert_eq!(
+        std::fs::read(out.join("docs/letter.txt")).expect("letter"),
+        letter
+    );
     assert_eq!(std::fs::read(out.join("big.bin")).expect("big"), big);
 }
 
@@ -277,9 +290,18 @@ fn the_terminal_never_prints_the_account_code() {
     let written = std::fs::read_to_string(fx.path("code.txt")).expect("code");
     let dashed = written.trim();
     let bare = dashed.replace('-', "");
-    assert!(!dashed.is_empty() && bare.len() >= 32, "the fixture code is not a code");
-    assert!(!said.contains(dashed), "the terminal printed the account code");
-    assert!(!said.contains(&bare), "the terminal printed the account code");
+    assert!(
+        !dashed.is_empty() && bare.len() >= 32,
+        "the fixture code is not a code"
+    );
+    assert!(
+        !said.contains(dashed),
+        "the terminal printed the account code"
+    );
+    assert!(
+        !said.contains(&bare),
+        "the terminal printed the account code"
+    );
     // And it did say the things it is supposed to say, so an empty capture cannot pass the above.
     // (The address line itself was consumed while starting the window, which is how the token got
     // here at all — so this looks at what came after it.)
@@ -288,7 +310,10 @@ fn the_terminal_never_prints_the_account_code() {
         said.contains("never in the browser"),
         "the terminal never said where the code goes: {said}"
     );
-    assert!(said.contains("The list is open"), "the terminal never said the list opened: {said}");
+    assert!(
+        said.contains("The list is open"),
+        "the terminal never said the list opened: {said}"
+    );
 }
 
 /// Ticking one row restores one file. The other must not appear — a control window that quietly
@@ -321,8 +346,14 @@ fn only_the_ticked_rows_are_written() {
     );
     let done = w.wait_for("finished");
     assert_eq!(done["job"]["total"], 1);
-    assert_eq!(std::fs::read(out.join("docs/letter.txt")).expect("letter"), letter);
-    assert!(!out.join("big.bin").exists(), "an unticked file was written anyway");
+    assert_eq!(
+        std::fs::read(out.join("docs/letter.txt")).expect("letter"),
+        letter
+    );
+    assert!(
+        !out.join("big.bin").exists(),
+        "an unticked file was written anyway"
+    );
 }
 
 /// A list that will not open leaves the window able to try another one, rather than dead.
@@ -368,7 +399,11 @@ fn restoring_nothing_is_refused_rather_than_reported_as_success() {
             .to_string(),
     );
     assert_eq!(answer.status, 400);
-    assert!(answer.body.contains("Tick at least one file"), "{}", answer.body);
+    assert!(
+        answer.body.contains("Tick at least one file"),
+        "{}",
+        answer.body
+    );
     assert_eq!(w.state()["phase"], "ready", "the window left the list");
 }
 
@@ -391,7 +426,10 @@ fn the_page_needs_the_token() {
         .as_bytes(),
     );
     assert_eq!(ok.status, 200);
-    assert!(ok.body.contains("nmts-recovery"), "the page is not the page");
+    assert!(
+        ok.body.contains("nmts-recovery"),
+        "the page is not the page"
+    );
 }
 
 /// Every `/api/` route is behind the token too, and the token goes in a header rather than the
@@ -403,7 +441,10 @@ fn the_api_needs_the_token_in_a_header() {
     assert_eq!(w.get("/api/state", None).status, 403);
     assert_eq!(w.get("/api/state", Some("wrong")).status, 403);
     // A token in the query string is not a token: only the header is read.
-    assert_eq!(w.get(&format!("/api/state?t={}", w.token), None).status, 403);
+    assert_eq!(
+        w.get(&format!("/api/state?t={}", w.token), None).status,
+        403
+    );
     assert_eq!(w.get("/api/state", Some(&w.token)).status, 200);
 }
 
@@ -538,17 +579,34 @@ fn a_request_with_more_headers_than_the_parser_reads_is_refused() {
     raw.push_str("Content-Length: 2\r\n\r\n{}");
     let answer = speak(w.port, raw.as_bytes());
     assert_eq!(answer.status, 400, "{}", answer.body);
-    assert_eq!(w.state()["phase"], "need-map", "something was acted on anyway");
+    assert_eq!(
+        w.state()["phase"],
+        "need-map",
+        "something was acted on anyway"
+    );
 }
 
 /// ⛔ The account code must not have a way in through this channel. There is no route that takes
 ///    one, and if one is ever added this test is what notices.
+///
+/// ⚠ THIS TEST USED TO PROVE LESS THAN ITS NAME SAID (found 2026-08-20, adversarial review). It
+///   checked four named routes for a `code` FIELD — and the way a code could actually arrive was
+///   none of those: `/api/map` takes an arbitrary text body, and a recovery KIT is a text file with
+///   the account code inside it. The published README says "there is no route in the control
+///   channel that accepts an account code, and a test asserts it"; the test asserted the wrong
+///   thing, so the sentence was true only by luck. `/api/map` with a real kit is now in the list.
 #[test]
 fn no_route_accepts_an_account_code() {
     let (fx, _, _) = two_files();
     let w = Window::start(&fx, &[]);
     let code = std::fs::read_to_string(fx.path("code.txt")).expect("code");
-    for target in ["/api/code", "/api/open", "/api/unlock", "/api/state"] {
+    for target in [
+        "/api/code",
+        "/api/open",
+        "/api/unlock",
+        "/api/state",
+        "/api/map",
+    ] {
         let answer = w.post(
             target,
             &serde_json::json!({ "code": code.trim(), "accountCode": code.trim() }).to_string(),
@@ -563,6 +621,50 @@ fn no_route_accepts_an_account_code() {
     assert_eq!(w.state()["phase"], "need-map");
 }
 
+/// A kit offered to the control channel is refused, and refused AS A KIT.
+///
+/// ⛔ WHY THE WORDING IS PART OF THE TEST. The generic answer ("this file is not an NMTS recovery
+///    list") sends a person who saved only the kit — the one-file artefact the product tells people
+///    to keep — round the same loop again, and the loop runs through a browser that must never see
+///    their account code. The refusal has to name the file for what it is and give the command that
+///    works, or the design's rule and the person's only path are in contradiction.
+///
+/// ⛔ The page refuses a kit BEFORE reading it, which is where the protection actually lives; this
+///    is the second line, for text that reaches the channel some other way.
+#[test]
+fn a_kit_is_refused_by_name_with_the_terminal_command() {
+    let (fx, _, _) = two_files();
+    fx.write_kit();
+    let kit = std::fs::read_to_string(fx.path("kit.txt")).expect("kit");
+    let w = Window::start(&fx, &[]);
+
+    let answer = w.post(
+        "/api/map",
+        &serde_json::json!({ "name": "kit.txt", "text": kit }).to_string(),
+    );
+    assert_eq!(
+        answer.status, 200,
+        "the channel accepted the request: {}",
+        answer.body
+    );
+
+    // What matters is the state it settles into, not the acknowledgement.
+    let state = w.state();
+    assert_eq!(
+        state["phase"], "need-map",
+        "a kit must not open the code prompt"
+    );
+    let note = state["note"].as_str().unwrap_or("");
+    assert!(
+        note.contains("recovery kit"),
+        "the refusal must name the file as a kit: {note}"
+    );
+    assert!(
+        note.contains("nmts-recovery --map"),
+        "the refusal must give the command that works: {note}"
+    );
+}
+
 // ── The page as a file ────────────────────────────────────────────────────────────────────────
 
 /// `--write-gui` puts the page on disk so it can be read without running the program, and what it
@@ -575,10 +677,17 @@ fn the_page_can_be_written_out_and_does_nothing_on_its_own() {
         .args(["--write-gui", to.to_str().expect("utf8"), "--lang", "en"])
         .output()
         .expect("run");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let page = std::fs::read_to_string(&to).expect("the page was written");
     assert!(page.contains("</html>"));
-    assert!(!page.contains("__CSP_NONCE__"), "a placeholder was left in the file");
+    assert!(
+        !page.contains("__CSP_NONCE__"),
+        "a placeholder was left in the file"
+    );
     // Nothing in the page reaches outside this machine.
     for outside in ["http://", "https://"] {
         assert!(
