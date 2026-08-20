@@ -525,7 +525,7 @@ dependencies = [
 
 [[package]]
 name = "nmts-recovery"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "bech32",
  "blake2",
@@ -537,6 +537,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "ureq",
+ "zeroize",
 ]
 
 [[package]]

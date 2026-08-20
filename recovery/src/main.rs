@@ -48,6 +48,7 @@ use nmts_crypto::codes::AccountCode;
 use nmts_crypto::manifest::RecoveryManifest;
 use restore::Note;
 use source::{BlobSource, DirSource, HttpSource};
+use zeroize::Zeroizing;
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -224,7 +225,12 @@ fn open_from_file(
     a: &args::Args,
     lang: Lang,
 ) -> Result<(RecoveryManifest, Option<String>), String> {
-    let raw = std::fs::read_to_string(&a.map).map_err(|e| format!("{}: {e}", a.map.display()))?;
+    // ⛔ Wrapped because THIS FILE MAY BE A KIT, and a kit has the account code written in it in
+    //    the clear. The extracted field is cleared on its own; the whole file's text is the other
+    //    copy, and it is the larger one.
+    let raw = Zeroizing::new(
+        std::fs::read_to_string(&a.map).map_err(|e| format!("{}: {e}", a.map.display()))?,
+    );
     // A recovery kit has the list inside it, so either file gets a person to the same place.
     let (wrapper, code_in_kit) = if kitfile::looks_like_kit(&raw) {
         open_kit(&raw, lang)?
@@ -350,7 +356,10 @@ fn parse_list(raw: &str, lang: Lang) -> Result<mapfile::MapFile, String> {
 }
 
 /// Open a recovery kit and take the list — and the account code — out of it.
-fn open_kit(raw: &str, lang: Lang) -> Result<(mapfile::MapFile, Option<String>), String> {
+fn open_kit(
+    raw: &str,
+    lang: Lang,
+) -> Result<(mapfile::MapFile, Option<Zeroizing<String>>), String> {
     let kit = match kitfile::parse(raw) {
         Ok(k) => k,
         Err(kitfile::KitFileError::NotAKit(why)) => {
@@ -572,10 +581,14 @@ pub(crate) fn read_account_code(
     code_file: Option<&Path>,
     lang: Lang,
 ) -> Result<AccountCode, String> {
-    let raw = match code_file {
-        Some(path) => {
-            std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?
-        }
+    // ⛔ `Zeroizing`, not `String`. What is in this variable is the account code in the clear, and
+    //    a plain `String` leaves it in freed heap memory when it goes away — where a core dump or a
+    //    swapped-out page outlives the run. `AccountCode` clears itself; this is the text on the
+    //    way in, which used to be the uncovered half.
+    let raw: Zeroizing<String> = match code_file {
+        Some(path) => Zeroizing::new(
+            std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?,
+        ),
         None => prompt_for_code(lang)?,
     };
     parse_account_code(&raw, lang)
@@ -590,7 +603,7 @@ pub(crate) fn parse_account_code(raw: &str, lang: Lang) -> Result<AccountCode, S
     AccountCode::parse(trimmed).map_err(|_| msg::CODE_MALFORMED.get(lang).to_string())
 }
 
-fn prompt_for_code(lang: Lang) -> Result<String, String> {
+fn prompt_for_code(lang: Lang) -> Result<Zeroizing<String>, String> {
     eprint!("{}", msg::ASK_CODE.get(lang));
     let _ = std::io::stderr().flush();
 
@@ -598,7 +611,7 @@ fn prompt_for_code(lang: Lang) -> Result<String, String> {
     // `echo … | nmts-recovery` asked for. Reading it as an ordinary line is both correct and what
     // makes the offline tests able to drive this program at all.
     if !std::io::stdin().is_terminal() {
-        let mut line = String::new();
+        let mut line = Zeroizing::new(String::new());
         std::io::stdin()
             .read_line(&mut line)
             .map_err(|e| format!("{e}"))?;
@@ -609,7 +622,7 @@ fn prompt_for_code(lang: Lang) -> Result<String, String> {
         Ok(line) => {
             // The newline the person typed was swallowed with the echo.
             eprintln!();
-            Ok(line)
+            Ok(Zeroizing::new(line))
         }
         Err(_) => {
             // Some terminals cannot be put into a mode where typing is invisible. Saying so is the
@@ -619,7 +632,7 @@ fn prompt_for_code(lang: Lang) -> Result<String, String> {
             eprintln!("{}", msg::ECHO_WARNING.get(lang));
             eprint!("{}", msg::ASK_CODE.get(lang));
             let _ = std::io::stderr().flush();
-            let mut line = String::new();
+            let mut line = Zeroizing::new(String::new());
             std::io::stdin()
                 .read_line(&mut line)
                 .map_err(|e| format!("{e}"))?;

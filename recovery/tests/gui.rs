@@ -542,6 +542,11 @@ fn the_page_is_served_under_a_policy_and_never_shared_across_origins() {
 }
 
 /// A body larger than the cap is refused on the strength of what it claims, before it is read.
+///
+/// ⚠ IT USED TO ASSERT ONLY THE STATUS, AND 400 IS ALSO WHAT A TIMEOUT PRODUCES (found
+///   2026-08-20). The test would have stayed green with the cap deleted: the body never arrives, so
+///   the read times out and answers 400 fifteen seconds later. It now reads the reason and the
+///   clock, which is the difference between "refused" and "gave up waiting".
 #[test]
 fn an_enormous_body_is_refused_without_being_read() {
     let (fx, _, _) = two_files();
@@ -556,6 +561,11 @@ fn an_enormous_body_is_refused_without_being_read() {
         .as_bytes(),
     );
     assert_eq!(answer.status, 400);
+    assert!(
+        answer.body.contains("larger than this program accepts"),
+        "refused for the wrong reason: {}",
+        answer.body
+    );
 }
 
 /// A request with more headers than the parser reads is refused, and nothing is acted on.
@@ -584,6 +594,60 @@ fn a_request_with_more_headers_than_the_parser_reads_is_refused() {
         "need-map",
         "something was acted on anyway"
     );
+}
+
+/// ⛔ A CALLER WHO IS ABOUT TO BE REFUSED MUST NOT GET TO CHOOSE WHAT THIS PROGRAM HOLDS.
+///
+/// The body used to be read — and its declared length allocated — before the `Host` check and the
+/// token check had run. Anything on this machine could open a socket, say `Content-Length:
+/// 33554432`, send nothing, and hold that much of a rescue machine's memory for the read timeout;
+/// thirty-two sockets is a gigabyte. Now the head is read, the caller is refused, and the body is
+/// never asked for.
+///
+/// This test measures it as TIME: the request is sent with NO body at all. A server that waits for
+/// the body cannot answer until the read timeout (15 s); one that refuses first answers at once.
+#[test]
+fn a_refused_caller_is_answered_without_its_body_being_read() {
+    let (fx, _, _) = two_files();
+    let w = Window::start(&fx, &[]);
+    let raw = format!(
+        "POST /api/map HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nX-Recovery-Token: wrong\r\nContent-Length: 33554432\r\n\r\n",
+        w.port
+    );
+    let started = std::time::Instant::now();
+    let answer = speak(w.port, raw.as_bytes());
+    let took = started.elapsed();
+    assert_eq!(answer.status, 403, "{}", answer.body);
+    assert!(
+        took < Duration::from_secs(5),
+        "the answer waited for a body it was never going to accept: {took:?}"
+    );
+}
+
+/// A body larger than the one route that carries one is refused at the header, whoever asks.
+#[test]
+fn a_large_body_is_refused_on_routes_that_have_no_use_for_one() {
+    let (fx, _, _) = two_files();
+    let w = Window::start(&fx, &[]);
+    let raw = format!(
+        "POST /api/lang HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nX-Recovery-Token: {}\r\nContent-Length: 1048576\r\n\r\n",
+        w.port, w.token
+    );
+    let started = std::time::Instant::now();
+    let answer = speak(w.port, raw.as_bytes());
+    let took = started.elapsed();
+    assert_eq!(answer.status, 400, "{}", answer.body);
+    // ⛔ THE STATUS ALONE PROVES NOTHING HERE (learned while writing this test): a body that is
+    //    announced and never sent also ends in 400, by timing out. What is being measured is that
+    //    the SIZE was refused, at the header, before anything waited for a single byte.
+    assert!(
+        answer.body.contains("larger than this program accepts"),
+        "refused for the wrong reason: {}",
+        answer.body
+    );
+    assert!(took < Duration::from_secs(5), "it waited: {took:?}");
+    // And the route that DOES carry one still takes a real list.
+    assert_eq!(w.state()["phase"], "need-map");
 }
 
 /// ⛔ The account code must not have a way in through this channel. There is no route that takes

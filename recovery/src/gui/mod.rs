@@ -496,7 +496,9 @@ fn handle(
     let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
     let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
 
-    let req = match http::read_request(&stream) {
+    // ⛔ THE HEAD ONLY. The body is read further down, after the caller has been let in — a caller
+    //    who is about to be refused must not get to choose how many bytes this program waits for.
+    let (head, mut reader) = match http::read_head(&stream) {
         Ok(r) => r,
         Err(why) => {
             let _ = http::respond(
@@ -514,37 +516,51 @@ fn handle(
     //    internet reaches a port on this machine; the socket looks local because it is local. The
     //    only thing that tells the two apart is what the client asked for by name.
     let expect_host = format!("127.0.0.1:{port}");
-    if req.host.as_deref() != Some(expect_host.as_str()) {
+    if head.host.as_deref() != Some(expect_host.as_str()) {
         deny(&mut stream);
         return;
     }
     // A request from another page carries that page's origin. Ours is the only one allowed, and a
     // request with no origin at all is the page's own fetch or the browser's first load.
-    if let Some(origin) = &req.origin {
+    if let Some(origin) = &head.origin {
         if origin != &format!("http://{expect_host}") {
             deny(&mut stream);
             return;
         }
     }
 
-    match (req.method.as_str(), req.path.as_str()) {
+    match (head.method.as_str(), head.path.as_str()) {
         // Answered before the token check because a browser asks for it unbidden, and a 403 in the
         // network log next to a working page reads as a fault that is not there.
         ("GET", "/favicon.ico") => {
             let _ = http::respond(&mut stream, 204, "text/plain", &[], b"");
         }
         ("GET", "/") => {
-            if !constant_time_eq(req.query_param("t").as_deref().unwrap_or(""), token) {
+            if !constant_time_eq(head.query_param("t").as_deref().unwrap_or(""), token) {
                 deny(&mut stream);
                 return;
             }
             serve_page(&mut stream);
         }
         (_, path) if path.starts_with("/api/") => {
-            if !constant_time_eq(req.token_header.as_deref().unwrap_or(""), token) {
+            if !constant_time_eq(head.token_header.as_deref().unwrap_or(""), token) {
                 deny(&mut stream);
                 return;
             }
+            // Only now, with the caller admitted, is the body asked for.
+            let req = match http::read_body(head, &mut reader) {
+                Ok(r) => r,
+                Err(why) => {
+                    let _ = http::respond(
+                        &mut stream,
+                        400,
+                        "text/plain; charset=utf-8",
+                        &[],
+                        why.as_bytes(),
+                    );
+                    return;
+                }
+            };
             api(&mut stream, &req, shared, tx, a);
         }
         _ => {
@@ -598,7 +614,7 @@ fn api(
     tx: &Sender<Event>,
     a: &Args,
 ) {
-    match (req.method.as_str(), req.path.as_str()) {
+    match (req.head.method.as_str(), req.head.path.as_str()) {
         ("GET", "/api/state") => {
             let body = session(shared).to_json().to_string();
             json_ok(stream, &body);

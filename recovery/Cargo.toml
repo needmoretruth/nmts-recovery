@@ -1,6 +1,6 @@
 [package]
 name = "nmts-recovery"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Recover files uploaded with NMTS using only an account code, a recovery list, and a public Walrus aggregator. No NMTS server is contacted."
@@ -29,18 +29,34 @@ serde_json = "1"
 # `nmts-crypto` uses it for HKDF — so this adds a name here and nothing to the dependency graph.
 sha2 = "0.10"
 
-# The one network dependency: a blocking HTTP client for reading public Walrus aggregators.
+# The one network dependency: a blocking HTTP client.
 #
-# ⚠ It is a dependency on a READ path and nothing else. The account code never reaches it — keys
-#   are derived locally and the only thing that crosses the network is a request for a public blob
-#   by its public id. `--blobs-dir` skips this code entirely for anyone who would rather fetch the
-#   blobs themselves with curl; `--print-fetch-plan` prints exactly what to fetch.
+# ⚠ It is a dependency on a READ path and nothing else, and the account code never reaches it —
+#   keys are derived locally. Two kinds of request cross the network: a public blob by its public
+#   id (`source.rs`), and, with `--find` only, a question to a public Sui node about which blobs a
+#   wallet owns (`discover.rs`). ⛔ This comment used to say the blob request was the only one; it
+#   was written before `--find` existed and stayed wrong. The terminal help's WHAT GOES OUT block
+#   is the copy a person actually reads, and a test holds it level with the code.
+#   `--blobs-dir` skips this code entirely for anyone who would rather fetch the blobs themselves
+#   with curl; `--print-fetch-plan` prints exactly what to fetch.
 #
 # `default-features = false` drops gzip: a blob is ciphertext, so there is nothing in it to
 # compress, and a decompressor on this path would only add a way for a response to expand into
 # more memory than the list said to expect. `rustls` brings its own bundled root certificates, so
 # the tool does not depend on how the machine it is rescued onto happens to be configured.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+# Clearing the account code out of memory when the value holding it goes away.
+#
+# ⛔ THE ENGINE CRATE ALREADY DOES THIS FOR ITS OWN TYPES — `AccountCode` and every key derived
+#   from it clear themselves on drop. What was left uncovered was the TEXT on the way in: the line
+#   read from the terminal, the contents of a `--code-file`, and the account code a recovery kit
+#   carries in the clear. Those were ordinary `String`s, so the code stayed in freed heap memory,
+#   where a core dump or a swapped-out page can outlive the run. `Zeroizing<String>` closes the
+#   gap by type: a bare `String` no longer fits where the code is carried.
+#
+# ⚠ It adds nothing to the dependency graph — `nmts-crypto` already pulls this exact crate in.
+zeroize = "1"
 
 # Hiding what is typed at the account-code prompt, on all three desktop platforms.
 #

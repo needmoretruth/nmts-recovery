@@ -28,7 +28,8 @@ Either of these:
 * **Your recovery list** (`.nmtsmap`) **and your account code**. The list is encrypted and the code
   opens it, so keeping them apart is what makes losing one of them survivable.
 
-Neither is sent anywhere.
+Neither the code nor the list is ever sent anywhere. Things derived from your code do go out when
+you use `--find` — see **What it does over the network**.
 
 ## What it cannot do
 
@@ -234,16 +235,34 @@ somebody would fund the wrong one.
 
 ## What it does over the network
 
-One kind of request, and only when you have not passed `--blobs-dir`:
+**Your account code never goes out.** It is read, keys are derived from it locally, and it is not
+part of any request this program makes. What follows is everything that *is*.
+
+Fetching the bytes, on every restore that does not use `--blobs-dir`:
 
 ```
 GET https://<aggregator>/v1/blobs/<blob id>
 GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<patch id>
 ```
 
-Public blobs, by their public ids. Your account code never reaches this code path — keys are
-derived locally, and the list is opened before anything is fetched. Every response is bounded to
-the exact ciphertext length the recovery list states before it is read.
+Public blobs, by their public ids. The list is opened before anything is fetched, and every
+response is bounded to the exact ciphertext length the recovery list states before it is read.
+
+With `--find`, two more, because there is no saved file to read the ids out of:
+
+```
+POST https://<sui node>/           suix_getOwnedObjects for the derived wallet address
+GET  https://<aggregator>/v1/blobs/by-quilt-patch-id/<derived patch id>
+```
+
+⚠ **Both of those are derived from your account code**, so asking them is telling a stranger's
+server that somebody is looking for this account's files, from this address, at this moment. The
+code itself is not sent, and neither server can work back to it — but the questions are not
+anonymous. `--rpc` names your own node; `--map FILE` avoids the lookup entirely.
+
+The addresses contacted are this program's built-in ones. A recovery list can name storage
+addresses of its own, and those are **not** contacted unless you ask with
+`--use-recorded-aggregators`.
 
 ## What it checks before it says a file came back
 

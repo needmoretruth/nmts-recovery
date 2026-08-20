@@ -129,7 +129,20 @@ USAGE
 WHAT IT NEEDS
   Your account code, and your recovery list. The list is encrypted; the code opens
   it. You can hand over the file you saved from NMTS, or use --find and let this
-  program look the list up on the storage network. Neither is ever sent anywhere.
+  program look the list up on the storage network.
+
+WHAT GOES OUT
+  Your account code never goes out. Keys are derived from it here and it is not part
+  of any request this program makes.
+  Every restore asks a public Walrus aggregator for blobs by their public ids.
+  --print-fetch-plan prints those requests so you can make them yourself, and
+  --blobs-dir then reads what you fetched, so the program opens no socket at all.
+  --find asks a public Sui node which blobs a wallet owns, and the wallet address and
+  the name it looks for are BOTH derived from your account code. Neither server can
+  work back to the code, but asking tells them somebody is looking for this account's
+  files, from this address, right now. --rpc names your own node; --map avoids it.
+  A recovery list can name storage addresses of its own. Those are not contacted
+  unless you ask, with --use-recorded-aggregators.
 
 OPTIONS
   --map FILE           the recovery list (.nmtsmap) you saved, OR a recovery kit
@@ -557,6 +570,72 @@ mod tests {
         match parse(&v(&["--gui", "--port", "8765"])) {
             Parsed::Run(a) => assert_eq!(a.port, Some(8765)),
             _ => panic!("did not parse"),
+        }
+    }
+    /// ⛔ EVERY PART OF THIS PROGRAM THAT OPENS A SOCKET IS NAMED IN THE HELP.
+    ///
+    /// The help used to end its "what it needs" paragraph with *"Neither is ever sent anywhere"*.
+    /// That sentence was true about the two things it named — the account code and the list — and
+    /// false about the impression it left, because `--find` asks a public Sui node a question
+    /// derived from the account code. A person deciding whether to type `--find` read the reassuring
+    /// sentence and had nowhere else to look; the README's correcting paragraph is not in the
+    /// terminal.
+    ///
+    /// So the rule is not "do not write that sentence" — anyone can reword their way past a banned
+    /// phrase. It is: **the set of source files that call the HTTP client must equal the set the
+    /// help describes.** Adding a third destination turns this red until both the table below and
+    /// the help have been told about it.
+    #[test]
+    fn every_part_of_this_program_that_opens_a_socket_is_named_in_the_help() {
+        // file stem → the phrase in the help that describes what it contacts.
+        const NAMED: [(&str, &str); 2] =
+            [("source", "Walrus aggregator"), ("discover", "Sui node")];
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut opens_a_socket: Vec<String> = Vec::new();
+        let mut stack = vec![dir];
+        while let Some(d) = stack.pop() {
+            for entry in std::fs::read_dir(&d).expect("read src") {
+                let path = entry.expect("entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).expect("read");
+                // Spelled in two pieces so THIS file does not match its own search and report
+                // itself as a thing that opens sockets.
+                if text.contains(concat!("ureq", "::")) {
+                    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    opens_a_socket.push(stem.to_string());
+                }
+            }
+        }
+        opens_a_socket.sort();
+        let mut expected: Vec<String> = NAMED.iter().map(|(f, _)| (*f).to_string()).collect();
+        expected.sort();
+        assert_eq!(
+            opens_a_socket, expected,
+            "a source file that talks to the network is not in this test's table — add it here \
+             AND say in the help what it contacts"
+        );
+        // ⚠ THE PHRASE MUST BE INSIDE THE OUTBOUND BLOCK, not merely somewhere in the help
+        //   (learned while writing this: "Sui node" also appears in the `--rpc` option line, so
+        //   the first version of this check stayed green with the sentence deleted).
+        let start = USAGE
+            .find("WHAT GOES OUT")
+            .expect("the help lost its outbound section");
+        let block = &USAGE[start..];
+        let block = match block.find("\n\nOPTIONS") {
+            Some(end) => &block[..end],
+            None => block,
+        };
+        for (file, phrase) in NAMED {
+            assert!(
+                block.contains(phrase),
+                "{file}.rs opens a socket and WHAT GOES OUT never says so: \"{phrase}\" is missing"
+            );
         }
     }
 }

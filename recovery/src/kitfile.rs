@@ -43,9 +43,28 @@ pub struct KitFile {
     pub version: u64,
     pub account_id: String,
     /// The account code, in the clear. ⛔ Never printed, never written anywhere by this program.
-    pub account_code: Option<String>,
+    ///
+    /// ⛔ `Zeroizing` rather than `String`: this is the one field in the file that opens the whole
+    /// account, and it is here in plaintext. The wrapper clears it when this value goes away, and
+    /// — the part that actually holds over time — makes a bare `String` not fit here.
+    #[serde(default, deserialize_with = "into_zeroizing")]
+    pub account_code: Option<zeroize::Zeroizing<String>>,
     /// The whole recovery-list document, embedded. `None` on a kit taken before any files existed.
     pub recovery_list: Option<serde_json::Value>,
+}
+
+/// Read a string straight into the wrapper that clears it.
+///
+/// ⛔ Not "read a `String`, then wrap it". `Zeroizing::new` takes ownership of the very buffer
+/// serde built, so exactly one copy of the account code ever exists and that copy is the one that
+/// gets cleared. Wrapping a value that was first stored somewhere else would leave the first one
+/// behind, which is the whole thing this is here to prevent.
+fn into_zeroizing<'de, D>(d: D) -> Result<Option<zeroize::Zeroizing<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize as _;
+    Ok(Option::<String>::deserialize(d)?.map(zeroize::Zeroizing::new))
 }
 
 /// Why a file could not be used as a recovery kit.
@@ -111,7 +130,10 @@ mod tests {
     fn reads_a_kit_and_finds_the_list_inside_it() {
         let k = parse(&kit(BODY)).expect("a kit");
         assert_eq!(k.version, 2);
-        assert_eq!(k.account_code.as_deref(), Some("AAAA-BBBB"));
+        assert_eq!(
+            k.account_code.as_ref().map(|c| c.as_str()),
+            Some("AAAA-BBBB")
+        );
         assert!(k.recovery_list.is_some());
     }
 

@@ -25,13 +25,30 @@ const MAX_HEAD: usize = 16 * 1024;
 /// How many header lines are read before the request is refused.
 const MAX_HEADERS: usize = 64;
 
-/// The largest body accepted. A recovery list for a very large account is a few megabytes of
-/// base64; this leaves room for an order of magnitude more and stops well short of a number that
-/// would matter on the kind of machine somebody rescues a drive onto.
+/// The largest body accepted on the ONE route that carries a document. A recovery list for a very
+/// large account is a few megabytes of base64; this leaves room for an order of magnitude more and
+/// stops well short of a number that would matter on the kind of machine somebody rescues a drive
+/// onto.
 pub const MAX_BODY: usize = 32 * 1024 * 1024;
 
-/// One request, already bounded.
-pub struct Request {
+/// The largest body accepted on every other route.
+///
+/// ⛔ THE NUMBER IS NOT "WHAT COULD A LEGITIMATE REQUEST CARRY" (2026-08-20). Every other route
+/// takes a short JSON object or nothing, and the checks that decide whether the caller may speak at
+/// all live in `mod.rs`. So the question this constant answers is what somebody who is *about to be
+/// refused* can make this program hold. 8 KiB is roomier than any of those routes needs and
+/// disappears against `MAX_CONNECTIONS`.
+const MAX_BODY_OTHER: usize = 8 * 1024;
+
+/// The one route whose body is a document rather than a short instruction.
+const DOCUMENT_PATH: &str = "/api/map";
+
+/// Everything before the body: what was asked for, and by whom.
+///
+/// ⛔ IT IS A SEPARATE TYPE SO THE BODY CAN BE REFUSED WITHOUT BEING READ (2026-08-20). The head
+/// carries every value the `Host` check and the token check need. Reading it first means a caller
+/// who is about to be told 403 never gets to decide how many bytes this program waits for or holds.
+pub struct Head {
     pub method: String,
     /// Path with the query string removed.
     pub path: String,
@@ -41,10 +58,17 @@ pub struct Request {
     pub origin: Option<String>,
     /// The value of the token header, if the client sent one.
     pub token_header: Option<String>,
+    /// What the caller says the body's length is. A claim, not a fact.
+    content_length: usize,
+}
+
+/// One request, already bounded: a head that passed its checks, and the body that followed.
+pub struct Request {
+    pub head: Head,
     pub body: Vec<u8>,
 }
 
-impl Request {
+impl Head {
     /// One query parameter, percent-decoded. Absent and empty are not distinguished — neither is
     /// a usable token, and treating them alike removes a branch that could only ever be wrong.
     pub fn query_param(&self, name: &str) -> Option<String> {
@@ -61,8 +85,10 @@ impl Request {
     }
 }
 
-/// Read one request from `stream`.
-pub fn read_request(stream: &TcpStream) -> Result<Request, String> {
+/// Read one request's head from `stream`, and hand back the reader positioned at its body.
+///
+/// ⛔ The body is NOT read here. See [`Head`].
+pub fn read_head(stream: &TcpStream) -> Result<(Head, BufReader<TcpStream>), String> {
     let mut reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
 
     let mut head_used = 0usize;
@@ -103,7 +129,14 @@ pub fn read_request(stream: &TcpStream) -> Result<Request, String> {
                 content_length = value
                     .parse::<usize>()
                     .map_err(|_| "the stated body length is not a number".to_string())?;
-                if content_length > MAX_BODY {
+                // The path is already parsed, so the cap can be the one this route actually needs
+                // rather than the largest any route needs.
+                let cap = if path == DOCUMENT_PATH {
+                    MAX_BODY
+                } else {
+                    MAX_BODY_OTHER
+                };
+                if content_length > cap {
                     return Err("the body is larger than this program accepts".to_string());
                 }
             }
@@ -117,22 +150,38 @@ pub fn read_request(stream: &TcpStream) -> Result<Request, String> {
         return Err("the request has more headers than this program accepts".to_string());
     }
 
-    let mut body = vec![0u8; content_length];
-    if content_length > 0 {
-        reader
-            .read_exact(&mut body)
-            .map_err(|e| format!("the body did not arrive in full ({e})"))?;
-    }
+    Ok((
+        Head {
+            method,
+            path,
+            query,
+            host,
+            origin,
+            token_header,
+            content_length,
+        },
+        reader,
+    ))
+}
 
-    Ok(Request {
-        method,
-        path,
-        query,
-        host,
-        origin,
-        token_header,
-        body,
-    })
+/// Read the body that follows a head whose checks have already passed.
+pub fn read_body(head: Head, reader: &mut BufReader<TcpStream>) -> Result<Request, String> {
+    let stated = head.content_length;
+    let mut body = Vec::new();
+    if stated > 0 {
+        // ⛔ NOT `vec![0u8; stated]`. That number is the caller's claim; turning it into memory
+        //    before a single byte has arrived hands anyone who can open a socket the right to make
+        //    this program hold that much for the length of the read timeout. Reading it in grows
+        //    with what actually arrives, and the cap above is what stops it.
+        reader
+            .take(stated as u64)
+            .read_to_end(&mut body)
+            .map_err(|e| format!("the body did not arrive in full ({e})"))?;
+        if body.len() != stated {
+            return Err("the body did not arrive in full".to_string());
+        }
+    }
+    Ok(Request { head, body })
 }
 
 /// One CRLF-terminated line, counted against the head budget.
@@ -232,15 +281,15 @@ fn percent_decode(s: &str) -> String {
 mod tests {
     use super::*;
 
-    fn req(query: &str) -> Request {
-        Request {
+    fn req(query: &str) -> Head {
+        Head {
             method: "GET".into(),
             path: "/".into(),
             query: query.into(),
             host: None,
             origin: None,
             token_header: None,
-            body: Vec::new(),
+            content_length: 0,
         }
     }
 
