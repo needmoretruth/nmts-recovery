@@ -642,6 +642,43 @@ fn the_list_says_who_wrote_it_and_which_chain_it_belongs_to() {
     );
 }
 
+/// ⛔ A STORAGE ADDRESS THE LIST NAMES IS NOT CONTACTED, AND THE RUN SAYS SO.
+///
+/// The document is sealed, but a recovery kit carries the account code, so a kit somebody hands you
+/// was sealed by them and every field in it is theirs — this list of hosts included. Contacting one
+/// is a beacon: it tells that host's operator the address the recovery ran from and the moment it
+/// ran. So the address is printed, named as not contacted, together with the switch that uses it.
+#[test]
+fn an_address_the_list_names_is_reported_as_not_contacted() {
+    let fx = Fixture::new();
+    let item = fx.add_file("a.txt", "/", b"x", 1, false);
+    fx.write_map_with_meta(
+        vec![item],
+        nmts_crypto::manifest::Meta {
+            storage: Some(nmts_crypto::manifest::MetaStorage {
+                network: Some("walrus".into()),
+                chain: Some("testnet".into()),
+                aggregators: vec!["https://someone-elses.example".into()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+
+    let out = fx.run(&["--list"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("https://someone-elses.example"), "{text}");
+    assert!(text.contains("--use-recorded-aggregators"), "{text}");
+
+    // And the plan the program would have followed does not point at it.
+    let plan = fx.run(&["--print-fetch-plan"]);
+    let plan = String::from_utf8_lossy(&plan.stdout);
+    assert!(
+        !plan.contains("curl -fL -o blob-a-txt-0.bin https://someone-elses.example"),
+        "{plan}"
+    );
+}
+
 /// A list that does NOT carry the block says nothing extra — and still lists its files.
 #[test]
 fn a_list_without_the_block_prints_no_invented_facts() {

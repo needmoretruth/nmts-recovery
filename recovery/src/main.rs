@@ -298,7 +298,19 @@ fn proceed(
 
     // ⭐ WHERE TO ASK, decided once, from what the SEALED list says about itself (owner directive, 2026-08-19). An
     //    explicit `--aggregator` still wins outright: a person who named an endpoint means it.
-    let endpoints = source::endpoints_for(&a.aggregators, manifest);
+    let endpoints = source::endpoints_for(&a.aggregators, manifest, a.use_recorded_aggregators);
+    if !endpoints.held_back.is_empty() {
+        let list = endpoints
+            .held_back
+            .iter()
+            .map(|e| format!("  {e}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        println!(
+            "\n{}",
+            msg::RECORDED_HELD_BACK.get(lang).replace("{list}", &list)
+        );
+    }
 
     match a.mode {
         Mode::List => {
@@ -307,12 +319,12 @@ fn proceed(
         }
         Mode::FetchPlan => {
             print_summary(manifest, &planned, lang);
-            print_fetch_plan(&planned, &endpoints, lang);
+            print_fetch_plan(&planned, &endpoints.use_now, lang);
             Ok(ExitCode::SUCCESS)
         }
         _ => {
             print_summary(manifest, &planned, lang);
-            do_restore(&planned, a, &endpoints, lang)
+            do_restore(&planned, a, &endpoints.use_now, &endpoints.held_back, lang)
         }
     }
 }
@@ -483,6 +495,7 @@ fn do_restore(
     planned: &[restore::PlannedItem<'_>],
     a: &args::Args,
     endpoints: &[String],
+    held_back: &[String],
     lang: Lang,
 ) -> Result<ExitCode, String> {
     let source: Box<dyn BlobSource> = match &a.blobs_dir {
@@ -540,6 +553,10 @@ fn do_restore(
             msg::DONE_PARTIAL.get(lang),
             failed.len()
         );
+        // The notice at the top may have scrolled away by now, and this is the moment it matters.
+        if !held_back.is_empty() && a.blobs_dir.is_none() {
+            println!("  {}", msg::RECORDED_HELD_BACK_HINT.get(lang));
+        }
         // ⛔ Non-zero, always. A recovery that half worked and exited 0 is a recovery somebody's
         //    script will report as a success.
         Ok(ExitCode::from(3))

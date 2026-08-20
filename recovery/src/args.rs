@@ -74,6 +74,14 @@ pub struct Args {
     pub code_file: Option<PathBuf>,
     /// Aggregators to try, in order. Empty means the built-in list.
     pub aggregators: Vec<String>,
+    /// May the run read from endpoints the LIST names, as well as the ones built into this program?
+    ///
+    /// ⛔ Off unless asked. A recovery kit carries the account code, so a kit somebody hands you is
+    /// a document they sealed themselves — every field in it is theirs, including this list of
+    /// hosts. Contacting one is a beacon: it tells its operator the address you recover from and
+    /// the moment you did it. The bytes are authenticated either way, which protects what arrives
+    /// and says nothing about the request going out.
+    pub use_recorded_aggregators: bool,
     /// Read blobs from this directory instead of the network.
     pub blobs_dir: Option<PathBuf>,
     /// Restore only items whose path or name contains this text.
@@ -138,6 +146,11 @@ OPTIONS
   --out DIR            where to write recovered files. Required when restoring.
   --code-file FILE     read the account code from a file instead of typing it.
   --aggregator URL     a Walrus aggregator to read from. Repeatable; tried in order.
+  --use-recorded-aggregators
+                       also read from the storage addresses written inside the
+                       recovery list itself. Off by default: whoever sealed the list
+                       chose those addresses, and contacting one tells its operator
+                       where and when you recovered. The run names them either way.
   --blobs-dir DIR      read blobs from a directory instead of the network. Each file
                        is named after its blob id (or quilt patch id).
   --only TEXT          restore only files whose path or name contains TEXT.
@@ -179,6 +192,7 @@ pub fn parse(argv: &[String]) -> Parsed {
         out: None,
         code_file: None,
         aggregators: Vec::new(),
+        use_recorded_aggregators: false,
         blobs_dir: None,
         only: None,
         overwrite: false,
@@ -243,6 +257,10 @@ pub fn parse(argv: &[String]) -> Parsed {
             }
             "--overwrite" => {
                 a.overwrite = true;
+                1
+            }
+            "--use-recorded-aggregators" => {
+                a.use_recorded_aggregators = true;
                 1
             }
             "--no-open" => {

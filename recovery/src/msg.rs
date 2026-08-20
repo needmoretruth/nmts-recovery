@@ -141,6 +141,28 @@ pub const NOTHING_MATCHED: Line = Line(
     "--only 에 해당하는 것이 이 복구 목록에 없습니다.",
 );
 
+/// The list named hosts to fetch from, and this run did not contact them.
+///
+/// ⛔ SAID OUT LOUD RATHER THAN DONE QUIETLY. Holding them back is the safe default, but a person
+/// whose files will not come back needs to know that another address exists and that they may use
+/// it. `{list}` is filled with the addresses, one per line.
+pub const RECORDED_HELD_BACK: Line = Line(
+    "This list also names storage addresses of its own. They were NOT contacted: whoever sealed \
+     the list chose them, and contacting one tells its operator where and when you recovered. Add \
+     --use-recorded-aggregators to use them too.\n{list}",
+    "이 복구 목록에는 자체 저장망 주소도 적혀 있습니다. 접속하지 않았습니다. 그 주소는 목록을 \
+     봉인한 사람이 적은 것이고, 접속하면 그 주소의 운영자에게 복구한 위치와 시각이 알려집니다. \
+     함께 쓰려면 --use-recorded-aggregators 를 붙이십시오.\n{list}",
+);
+
+/// Printed after a restore that did not finish, when there were held-back addresses.
+pub const RECORDED_HELD_BACK_HINT: Line = Line(
+    "Some parts did not arrive. This list names storage addresses this run did not contact — \
+     --use-recorded-aggregators tries those too.",
+    "받지 못한 조각이 있습니다. 이 복구 목록에는 이번에 접속하지 않은 저장망 주소가 적혀 \
+     있습니다. --use-recorded-aggregators 를 붙이면 그 주소도 시도합니다.",
+);
+
 pub const FETCH_PLAN_HEAD: Line = Line(
     "Fetch these, save each under the filename shown, then run again with --blobs-dir:",
     "아래를 받아 표시된 이름으로 저장한 뒤 --blobs-dir 로 다시 실행하십시오:",
@@ -384,6 +406,8 @@ pub const ALL_LINES: &[Line] = &[
     LIST_TOTALS_DISAGREE,
     DATE_NOT_RESTORED,
     NOTHING_MATCHED,
+    RECORDED_HELD_BACK,
+    RECORDED_HELD_BACK_HINT,
     FETCH_PLAN_HEAD,
     RESTORE_HEAD,
     DONE_ALL,

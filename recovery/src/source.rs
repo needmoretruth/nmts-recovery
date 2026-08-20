@@ -54,18 +54,37 @@ pub const DEFAULT_AGGREGATORS: [&str; 2] = [
     "https://aggregator.walrus-testnet.walrus.space",
 ];
 
+/// Which endpoints a run may read from, and which the list asked for but did not get.
+#[derive(Debug)]
+pub struct Endpoints {
+    /// Tried, in order.
+    pub use_now: Vec<String>,
+    /// Named by the list and NOT contacted, because nobody asked for them. Empty in the usual case.
+    pub held_back: Vec<String>,
+}
+
 /// The default endpoints, ordered by what the list says about itself.
 ///
 /// # What is trusted here, and why that is safe
-/// `chain` and `recorded` come out of the SEALED document — they were written by whoever holds the
-/// account code, and the bytes fetched are authenticated against the file key regardless, so a
-/// wrong endpoint costs a failed fetch and nothing else. ⛔ The plaintext wrapper's own
-/// self-description is NOT used for this, or for anything else the program acts on: anyone holding
-/// the file can edit it (`mapfile.rs`).
+/// `chain` comes out of the SEALED document, and the bytes fetched are authenticated against the
+/// file key regardless, so a wrong chain name costs a failed fetch and nothing else. ⛔ The
+/// plaintext wrapper's own self-description is NOT used for this, or for anything else the program
+/// acts on: anyone holding the file can edit it (`mapfile.rs`).
 ///
-/// `recorded` goes LAST, after both built-ins. It is the oldest information in the file — the
-/// endpoints one particular browser was reading on one particular day — so it is a fallback for
-/// the case where this program's own defaults have gone dark, not a preference.
+/// # ⛔ Why `recorded` is HELD BACK by default (2026-08-20)
+/// It used to be appended and contacted automatically, on the argument that the sealed document was
+/// "written by whoever holds the account code". **That argument died when the recovery kit started
+/// carrying the account code**: a kit handed to somebody is a document its author sealed with
+/// THEIR OWN code, so every field in it is attacker-chosen, and the program opens it with no
+/// prompt at all.
+///
+/// And the safety sentence covered the wrong threat. Authenticating the bytes protects what
+/// ARRIVES. It says nothing about the fact that **a request went out to a host the file chose** —
+/// which is a beacon: the address it is made from, and the moment somebody sat down to recover.
+///
+/// So the recorded endpoints are still read, still shown, and still usable — with
+/// `--use-recorded-aggregators`. They exist for the day this program's own defaults go dark, and
+/// that is a day somebody is reading the output.
 pub fn aggregators_for_chain(chain: Option<&str>, recorded: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     // A chain name this build does not know leaves the built-in order alone rather than emptying
@@ -95,6 +114,11 @@ pub fn aggregators_for_chain(chain: Option<&str>, recorded: &[String]) -> Vec<St
     out
 }
 
+/// The built-in endpoints for a chain, with nothing the list named.
+fn built_in_for_chain(chain: Option<&str>) -> Vec<String> {
+    aggregators_for_chain(chain, &[])
+}
+
 /// Which endpoints to read from, for one run — **the one place that decides it.**
 ///
 /// ⛔ It is a function rather than two similar blocks because there are two doors into a restore:
@@ -102,17 +126,35 @@ pub fn aggregators_for_chain(chain: Option<&str>, recorded: &[String]) -> Vec<St
 /// them would have learned that a list can now name its chain, and the other would have gone on
 /// guessing while every test passed. A single source is only a single source when nothing is
 /// allowed to go around it.
-pub fn endpoints_for(named: &[String], manifest: &RecoveryManifest) -> Vec<String> {
+pub fn endpoints_for(
+    named: &[String],
+    manifest: &RecoveryManifest,
+    allow_recorded: bool,
+) -> Endpoints {
     // An explicit `--aggregator` wins outright: a person who named an endpoint meant it, and this
     // is also the escape hatch for the day both built-in hosts are gone.
     if !named.is_empty() {
-        return named.to_vec();
+        return Endpoints {
+            use_now: named.to_vec(),
+            held_back: Vec::new(),
+        };
     }
     let storage = manifest.meta.as_ref().and_then(|m| m.storage.as_ref());
-    aggregators_for_chain(
-        storage.and_then(|s| s.chain.as_deref()),
-        storage.map(|s| s.aggregators.as_slice()).unwrap_or(&[]),
-    )
+    let chain = storage.and_then(|s| s.chain.as_deref());
+    let recorded = storage.map(|s| s.aggregators.as_slice()).unwrap_or(&[]);
+    if allow_recorded {
+        return Endpoints {
+            use_now: aggregators_for_chain(chain, recorded),
+            held_back: Vec::new(),
+        };
+    }
+    let use_now = built_in_for_chain(chain);
+    let held_back = recorded
+        .iter()
+        .map(|r| r.trim_end_matches('/').to_string())
+        .filter(|r| !r.is_empty() && !use_now.contains(r))
+        .collect();
+    Endpoints { use_now, held_back }
 }
 
 /// The storage network name this build knows how to fetch from.
@@ -429,19 +471,68 @@ mod tests {
         let out = endpoints_for(
             &named,
             &manifest_with(Some("testnet"), &["https://theirs.example"]),
+            false,
         );
-        assert_eq!(out, named);
+        assert_eq!(out.use_now, named);
+        assert!(
+            out.held_back.is_empty(),
+            "nothing is held back when the person named the endpoint: {:?}",
+            out.held_back
+        );
     }
 
     #[test]
     fn without_an_explicit_endpoint_the_list_decides() {
-        let out = endpoints_for(&[], &manifest_with(Some("testnet"), &[]));
-        assert!(out[0].contains("walrus-testnet"), "{out:?}");
+        let out = endpoints_for(&[], &manifest_with(Some("testnet"), &[]), false);
+        assert!(
+            out.use_now[0].contains("walrus-testnet"),
+            "{:?}",
+            out.use_now
+        );
         // A list with no block at all: the built-in order, exactly as before this existed.
         assert_eq!(
-            endpoints_for(&[], &manifest_with(None, &[])),
+            endpoints_for(&[], &manifest_with(None, &[]), false).use_now,
             DEFAULT_AGGREGATORS.to_vec()
         );
+    }
+
+    /// ⛔ A HOST THE FILE NAMED IS NOT CONTACTED UNTIL SOMEBODY ASKS FOR IT.
+    ///
+    /// The document is sealed, but a recovery kit carries the account code, so a kit somebody hands
+    /// you was sealed by them — this list of hosts included. Contacting one is a beacon whether or
+    /// not the bytes that come back are genuine.
+    #[test]
+    fn an_endpoint_the_file_named_is_held_back_until_it_is_asked_for() {
+        let manifest = manifest_with(Some("mainnet"), &["https://someone-elses.example/"]);
+        let out = endpoints_for(&[], &manifest, false);
+        assert!(
+            !out.use_now.iter().any(|e| e.contains("someone-elses")),
+            "a host the file chose must not be contacted by default: {:?}",
+            out.use_now
+        );
+        assert_eq!(
+            out.held_back,
+            vec!["https://someone-elses.example".to_string()],
+            "and it must be NAMED, so the person can decide"
+        );
+        // Asked for: it is appended, last, exactly as it used to be.
+        let asked = endpoints_for(&[], &manifest, true);
+        assert_eq!(
+            asked.use_now.last().map(String::as_str),
+            Some("https://someone-elses.example")
+        );
+        assert!(asked.held_back.is_empty());
+    }
+
+    /// A host the file names that this build already contacts is not "held back" — it is a default.
+    #[test]
+    fn a_recorded_endpoint_that_is_already_built_in_is_not_reported_as_withheld() {
+        let out = endpoints_for(
+            &[],
+            &manifest_with(Some("mainnet"), &[DEFAULT_AGGREGATORS[0]]),
+            false,
+        );
+        assert!(out.held_back.is_empty(), "{:?}", out.held_back);
     }
 
     #[test]

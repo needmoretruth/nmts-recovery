@@ -49,6 +49,14 @@ Stated plainly, because a recovery tool that oversells itself is worse than none
   sealed document and the right aggregator is asked first; the other is still tried, so a list that
   names its chain wrongly costs one extra request rather than the recovery. `--aggregator`
   overrides all of it.
+* **It does not contact storage addresses the list itself names.** A list can record the
+  aggregators the browser was reading from when it was written. Those are not contacted unless you
+  ask with `--use-recorded-aggregators`: the list is sealed, but a *recovery kit* carries the
+  account code, so a kit somebody hands you is a document they sealed — every field in it is
+  theirs, that list of hosts included. Contacting one tells its operator the address you recovered
+  from and the moment you did it, and authenticating the bytes that come back does not undo a
+  request that already went out. The addresses are printed either way, so they are there for the
+  day the built-in ones go dark.
 * **An older copy cannot open a newer list.** The list format carries a version, and a build that
   predates it stops and says so rather than guessing at bytes it does not understand — guessing is
   how a recovery produces files that look right and are not. `nmts-recovery --version` prints the
@@ -103,6 +111,7 @@ folder you filled with `--blobs-dir`. Everything after the bytes arrive is ident
 | `--out DIR` | where to write recovered files. Required when restoring. |
 | `--code-file FILE` | read the account code from a file instead of typing it. |
 | `--aggregator URL` | a Walrus aggregator to read from. Repeatable; tried in order. |
+| `--use-recorded-aggregators` | also read from the storage addresses written inside the recovery list itself. Off by default — see below. |
 | `--blobs-dir DIR` | read blobs from a directory instead of the network. |
 | `--only TEXT` | restore only files whose path or name contains TEXT. |
 | `--overwrite` | replace files that already exist. Off by default. |

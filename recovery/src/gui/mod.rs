@@ -747,16 +747,27 @@ fn run_restore(
     a: Args,
 ) {
     let lang = current_lang(&shared);
+    let endpoints =
+        crate::source::endpoints_for(&a.aggregators, &manifest, a.use_recorded_aggregators);
+    let held_back = endpoints.held_back.clone();
     let source: Box<dyn BlobSource> = match &a.blobs_dir {
         Some(dir) => Box::new(DirSource::new(dir)),
         // ⛔ The SAME decision the terminal makes, from the same function: which endpoints to ask
         //    now depends on what the sealed list says about its chain (owner directive, 2026-08-19), and a second copy
         //    of that rule here is how one door learns something the other never does.
-        None => Box::new(HttpSource::new(crate::source::endpoints_for(
-            &a.aggregators,
-            &manifest,
-        ))),
+        None => Box::new(HttpSource::new(endpoints.use_now)),
     };
+    // ⛔ Said in the window too. The flag that lifts it is a TERMINAL flag — this window has no
+    //    control that turns it on, because turning it on is a decision about who learns you are
+    //    recovering, and that belongs at the place the person typed the command.
+    if !held_back.is_empty() && a.blobs_dir.is_none() {
+        let mut s = session(&shared);
+        for e in &held_back {
+            s.job
+                .lines
+                .push(format!("{} — {e}", msg::RECORDED_HELD_BACK_HINT.get(lang)));
+        }
+    }
     let planned = restore::plan(&manifest, &out, None, own_quilt.as_deref());
 
     for p in &planned {
