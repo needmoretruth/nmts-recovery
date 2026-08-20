@@ -176,7 +176,7 @@ actually have arrived.
 
 ### Why a page served on your own machine can be trusted at all
 
-Four things, and none of them is sufficient alone:
+Five things, and none of them is sufficient alone:
 
 1. The listener is bound to `127.0.0.1`. Nothing off your machine can connect to it.
 2. A fresh 32-byte token is minted per run and printed once, in the terminal. Every request
@@ -187,7 +187,16 @@ Four things, and none of them is sufficient alone:
 4. No response carries a cross-origin header of any kind, and any `Origin` other than the
    server's own is refused outright.
 
-Each of those four is held by its own test, and each test was checked by removing the check and
+5. Your desktop is handed a **file**, not the address. Opening the address directly would put the
+   token in a command line, and on Linux every account on the machine can read those. Whoever holds
+   the token can ask this program for your whole file index and tell it where to write your
+   decrypted files — so it is a secret in the same class as the address itself. The file is created
+   with owner-only permission and an unguessable name, and it does nothing but send the browser to
+   the address. It is removed shortly after. If it cannot be written, nothing is opened: the
+   address is in your terminal either way, and quietly falling back would put the token in the
+   process list on exactly the systems where writing a private file failed.
+
+Each of those is held by its own test, and each test was checked by removing the check and
 watching it fail.
 
 The page is at `recovery/gui/index.html` — one file, no libraries, nothing loaded from anywhere.

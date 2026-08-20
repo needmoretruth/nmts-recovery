@@ -888,11 +888,87 @@ pub fn write_page(to: &Path) -> Result<(), String> {
     std::fs::write(to, PAGE.replace(NONCE_SLOT, "")).map_err(|e| format!("{}: {e}", to.display()))
 }
 
+/// The page handed to the desktop to open, which does nothing but go to `url`.
+///
+/// ⛔ WHY THIS FILE EXISTS AT ALL (2026-08-20). The control address carries the session token, and
+/// handing it to `xdg-open` / `open` / `start` puts it in a COMMAND LINE. On Linux
+/// `/proc/<pid>/cmdline` is world-readable, so every other account on the machine can read it — and
+/// whoever holds the token can ask this program for the whole file index and tell it to write the
+/// decrypted files into a directory of their choosing. This program already refuses to take the
+/// ACCOUNT CODE as an argument for exactly that reason (`args.rs`); the token had no such rule.
+///
+/// So the launcher is given a FILE PATH instead. A path is not a secret. The file it points at is
+/// created with owner-only permission and an unguessable name, and the token reaches the browser
+/// over the redirect rather than through anyone's process list.
+///
+/// ⚠ WHAT THIS DOES NOT FIX: the browser's own process may keep the address in ITS command line
+/// once it follows the redirect — that is the browser's doing and outside this program. What it
+/// removes is the window before that, and the launcher chain (`xdg-open` is a shell script that
+/// execs several helpers), which is where a poller actually wins.
+fn launch_page(url: &str) -> String {
+    format!(
+        "<!doctype html><meta charset=\"utf-8\"><title>NMTS</title>\
+         <meta name=\"referrer\" content=\"no-referrer\">\
+         <meta http-equiv=\"refresh\" content=\"0;url={url}\">\
+         <p>Opening the NMTS recovery window. If nothing happens, copy the address printed in your \
+         terminal.</p>"
+    )
+}
+
+/// Write [`launch_page`] somewhere only this user can read it, and return the path.
+///
+/// ⛔ THE NAME IS RANDOM AND THE FILE MUST NOT ALREADY EXIST. A predictable path in a shared
+/// temporary directory is the oldest local attack there is: another account pre-creates it as a
+/// symlink and the write lands somewhere else. `create_new` makes an existing path an error rather
+/// than something to follow.
+fn write_launch_page(url: &str) -> Result<PathBuf, String> {
+    let name = format!(
+        "nmts-recovery-{}.html",
+        nmts_crypto::b64::encode(&OsRng::bytes::<12>())
+    );
+    let path = std::env::temp_dir().join(name.replace(['/', '\\'], "_"));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&path)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    file.write_all(launch_page(url).as_bytes())
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(path)
+}
+
 /// Ask the desktop to open the address. Best effort — the address is printed either way.
 ///
-/// The URL is passed as its own argument on every platform, never interpolated into a command
+/// ⛔ The desktop is handed a FILE PATH, not the address: the address carries the session token and
+/// a command line is public on this machine. See [`write_launch_page`]. If the file cannot be
+/// written we do NOT fall back to passing the URL — the person has it in their terminal, and a
+/// quiet fallback would put the token back in the process list on exactly the systems where writing
+/// a private file failed.
+///
+/// The path is passed as its own argument on every platform, never interpolated into a command
 /// string, so nothing in it can be read as a shell instruction.
 fn open_in_browser(url: &str) -> bool {
+    let Ok(page) = write_launch_page(url) else {
+        return false;
+    };
+    let opened = hand_to_desktop(&page.display().to_string());
+    // Long enough for a cold browser to start and read it, then gone. If it is read later than
+    // that the address is still in the terminal, which is where this program keeps telling people
+    // to look.
+    thread::spawn(move || {
+        thread::sleep(Duration::from_secs(30));
+        let _ = std::fs::remove_file(&page);
+    });
+    opened
+}
+
+/// Hand one argument to whatever opens things on this desktop.
+fn hand_to_desktop(url: &str) -> bool {
     use std::process::{Command, Stdio};
     let mut command = if cfg!(target_os = "windows") {
         // ⚠ `cmd.exe` re-parses its own command line, so this is only safe because of what the URL
@@ -926,6 +1002,52 @@ fn open_in_browser(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ⛔ The launch file is how the session token stops being visible to every other account on
+    ///    this machine. Three things make that true, and all three are checked here.
+    #[test]
+    fn the_launch_file_is_private_unguessable_and_carries_the_address() {
+        let url = "http://127.0.0.1:54321/?t=AAAABBBBCCCC";
+        let first = write_launch_page(url).expect("write");
+        let second = write_launch_page(url).expect("write");
+
+        // ① It carries the address, so the browser reaches the server without the URL ever being
+        //    an argument to anything.
+        let body = std::fs::read_to_string(&first).expect("read");
+        assert!(
+            body.contains(url),
+            "the launch page does not carry the address: {body}"
+        );
+
+        // ② Two runs do not collide, which is what stops another account pre-creating the path.
+        assert_ne!(first, second, "the launch file name is predictable");
+
+        // ③ Owner-only. The whole point is that the path may be public and the contents may not.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&first)
+                .expect("stat")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(
+                mode, 0o600,
+                "the launch file is readable by others: {mode:o}"
+            );
+        }
+
+        // And an existing path is an error rather than something to write through.
+        let taken = first.clone();
+        let mut options = std::fs::OpenOptions::new();
+        assert!(
+            options.write(true).create_new(true).open(&taken).is_err(),
+            "create_new accepted a path that already exists",
+        );
+
+        let _ = std::fs::remove_file(&first);
+        let _ = std::fs::remove_file(&second);
+    }
 
     #[test]
     fn a_token_matches_only_itself() {
