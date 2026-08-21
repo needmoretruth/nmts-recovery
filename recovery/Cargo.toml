@@ -44,6 +44,15 @@ sha2 = "0.10"
 # compress, and a decompressor on this path would only add a way for a response to expand into
 # more memory than the list said to expect. `rustls` brings its own bundled root certificates, so
 # the tool does not depend on how the machine it is rescued onto happens to be configured.
+#
+# ⛔ @opens-sockets — this marker says the dependency on the NEXT LINE is the one that talks to
+#   the network. It is read by the test in `src/args.rs` that holds the help's WHAT GOES OUT block
+#   level with the code: to find the files that reach the network, that test searches the source
+#   for the client crate's name, and the name used to be written into the test itself. A name
+#   written in two places is a name that can be changed in one — swapping this crate, or importing
+#   it here under another name, emptied that search without turning anything red. The name is
+#   taken from this file now. Move the marker if the client crate changes; deleting it fails the
+#   test rather than quieting it.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 # Clearing the account code out of memory when the value holding it goes away.

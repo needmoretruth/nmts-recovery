@@ -572,6 +572,55 @@ mod tests {
             _ => panic!("did not parse"),
         }
     }
+
+    /// The crate names `Cargo.toml` marks as the ones that talk to the network.
+    ///
+    /// ⛔ THE NAME IS READ, NOT WRITTEN HERE. See the marker's own comment in `Cargo.toml`. If
+    ///    nothing is marked this fails rather than returning an empty list: an empty list would
+    ///    make the search below find no files, and a found set of nothing compared against a
+    ///    table of two would look like an ordinary red — but a found set of nothing compared
+    ///    against a table someone had emptied at the same time would look like health.
+    fn crates_that_talk_to_the_network(cargo_toml: &std::path::Path) -> Vec<String> {
+        const MARKER: &str = "@opens-sockets";
+        let text = std::fs::read_to_string(cargo_toml).expect("read Cargo.toml");
+        let mut names: Vec<String> = Vec::new();
+        let mut marked = false;
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if line.starts_with('#') {
+                marked |= line.contains(MARKER);
+                continue;
+            }
+            if !marked {
+                continue;
+            }
+            marked = false;
+            let key = line.split_once('=').map_or("", |(k, _)| k.trim());
+            assert!(
+                !key.is_empty()
+                    && key
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+                "the {MARKER} marker is not sitting on a dependency line — it points at: {line}"
+            );
+            // A dependency written with a dash is spelled with an underscore in Rust source.
+            names.push(key.replace('-', "_"));
+        }
+        assert!(
+            !marked,
+            "a {MARKER} marker in Cargo.toml has no dependency under it"
+        );
+        assert!(
+            !names.is_empty(),
+            "no dependency in Cargo.toml carries the {MARKER} marker, so the test below has no \
+             name to search the source for"
+        );
+        names
+    }
+
     /// ⛔ EVERY PART OF THIS PROGRAM THAT OPENS A SOCKET IS NAMED IN THE HELP.
     ///
     /// The help used to end its "what it needs" paragraph with *"Neither is ever sent anywhere"*.
@@ -585,14 +634,45 @@ mod tests {
     /// phrase. It is: **the set of source files that call the HTTP client must equal the set the
     /// help describes.** Adding a third destination turns this red until both the table below and
     /// the help have been told about it.
+    ///
+    /// ⚠ Which files those are is decided by two things this test no longer writes down itself:
+    ///   the client crate's NAME, which comes from the `@opens-sockets` marker in `Cargo.toml`,
+    ///   and the three ways a Rust file can name a crate — a path through it, an import of it, and
+    ///   an import that renames it, including inside a brace group. The
+    ///   version before this one searched for one hard-coded spelling, the crate's name followed
+    ///   by two colons. A file that imported the same crate under a different name and then called
+    ///   it by that other name reached the network without ever containing the thing being
+    ///   searched for: invisible here, the found set still equal to the table, and the help green
+    ///   while a third destination existed. Measured — with the old search that file passed.
+    ///
+    /// ⚠ THE CLIENT CRATE IS NOT SPELLED ANYWHERE IN THIS FILE, and that is deliberate. This is
+    ///   the third gate in this repository to learn that a test which reads source code must think
+    ///   about ITSELF first: written out, the name in a sentence like the one above is indexed by
+    ///   this very search, and the test reports the file it lives in as a thing that opens sockets.
     #[test]
     fn every_part_of_this_program_that_opens_a_socket_is_named_in_the_help() {
         // file stem → the phrase in the help that describes what it contacts.
         const NAMED: [(&str, &str); 2] =
             [("source", "Walrus aggregator"), ("discover", "Sui node")];
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let clients = crates_that_talk_to_the_network(&crate_dir.join("Cargo.toml"));
+        // The three ways a file can name a crate: a path through it, an import of it, and an
+        // import that renames it. Built here from the name that was just read, so no spelling of
+        // the client is written in this file at all — which is also why this test cannot match its
+        // own search the way an ordinary needle would.
+        //
+        // ⚠ The third form is not a duplicate of the second. An import group puts the rename
+        //   inside braces — `use {std::time::Duration, name as web};` — and that line contains
+        //   neither a path through the crate nor an import beginning with its name. Measured with
+        //   only the first two forms: a module written that way called the network from a file
+        //   this test judged and reported as clean, and the run was green.
+        let needles: Vec<String> = clients
+            .iter()
+            .flat_map(|c| [format!("{c}::"), format!("use {c}"), format!("{c} as ")])
+            .collect();
+        let mut judged = 0usize;
         let mut opens_a_socket: Vec<String> = Vec::new();
-        let mut stack = vec![dir];
+        let mut stack = vec![crate_dir.join("src")];
         while let Some(d) = stack.pop() {
             for entry in std::fs::read_dir(&d).expect("read src") {
                 let path = entry.expect("entry").path();
@@ -604,14 +684,25 @@ mod tests {
                     continue;
                 }
                 let text = std::fs::read_to_string(&path).expect("read");
-                // Spelled in two pieces so THIS file does not match its own search and report
-                // itself as a thing that opens sockets.
-                if text.contains(concat!("ureq", "::")) {
+                judged += 1;
+                if needles.iter().any(|n| text.contains(n.as_str())) {
                     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
                     opens_a_socket.push(stem.to_string());
                 }
             }
         }
+        println!(
+            "{judged} source files judged against {} network crate name(s): {}",
+            clients.len(),
+            clients.join(", ")
+        );
+        // ⚠ A floor, because a search that reads nothing agrees with everything. Set below what
+        //   the crate holds today, so growth is free and a walk that stops walking is not.
+        assert!(
+            judged >= 8,
+            "only {judged} source files were read — this test walked less of src/ than the crate \
+             has, so its answer is about nothing"
+        );
         opens_a_socket.sort();
         let mut expected: Vec<String> = NAMED.iter().map(|(f, _)| (*f).to_string()).collect();
         expected.sort();
