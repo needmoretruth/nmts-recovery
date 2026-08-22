@@ -85,6 +85,47 @@ pub struct Search {
     pub problems: Vec<String>,
 }
 
+/// The three things that decide which of two recovery lists to recover from.
+///
+/// A struct rather than six loose arguments: `supersedes(a, b)` with six values is a function whose
+/// call site can be wrong in a way that still compiles.
+#[derive(Clone, Copy)]
+pub(crate) struct Candidate<'a> {
+    seq: u64,
+    items: usize,
+    generated_at: &'a str,
+}
+
+impl<'a> Candidate<'a> {
+    pub(crate) fn of(m: &'a RecoveryManifest) -> Self {
+        Self {
+            seq: m.seq,
+            items: m.items.len(),
+            generated_at: &m.generated_at,
+        }
+    }
+}
+
+/// True when `candidate` should replace `current`.
+///
+/// ⛔ THE TIE IS THE POINT. `seq` decides, and it usually differs. When it
+/// does NOT, the account wrote the same number twice — which happens because the browser picks
+/// "stored seq + 1" and the call that stores it can fail without stopping anything. Two patches
+/// then carry one `seq`, and the later of them describes MORE files. Comparing with `>` alone kept
+/// whichever the RPC listed first: about half the time the older one.
+///
+/// ⚠ `generated_at` is a clock, and clocks lie — which is why it is never allowed to override
+/// `seq`, and only ever separates two documents the account itself failed to order.
+pub(crate) fn supersedes(candidate: Candidate<'_>, current: Candidate<'_>) -> bool {
+    if candidate.seq != current.seq {
+        return candidate.seq > current.seq;
+    }
+    if candidate.items != current.items {
+        return candidate.items > current.items;
+    }
+    candidate.generated_at > current.generated_at
+}
+
 /// Search the chain and the aggregators for this account's newest recovery list.
 ///
 /// `owner_override` is for accounts whose uploads were paid by a wallet the account code does not
@@ -149,13 +190,40 @@ pub fn find(
             // Highest `seq` wins — never the newest chain timestamp. Devices' clocks lie, and the
             // sequence is the one ordering the account itself asserted.
             //
+            // ⛔ BUT A TIE IS NOT A COIN FLIP. `seq` is chosen by the
+            //    browser as "the account's stored seq + 1", and the call that tells the server
+            //    about it can fail — the browser logs that and carries on. The next upload then
+            //    picks the SAME number for a list that describes MORE files. Two patches, one
+            //    `seq`, and `>` alone kept whichever the RPC happened to list first: about half the
+            //    time, the older one, which is the one missing the newest files. Nothing said so.
+            //
+            //    So the tie is broken by what the documents themselves say, in this order:
+            //      1. more items — a later list of the same account almost always describes a
+            //         superset, and "almost always" beats "whichever arrived first";
+            //      2. later `generated_at` — a clock, used ONLY inside an equal `seq`, where the
+            //         alternative is arbitrary. It never overrides the sequence.
+            //    And the tie is REPORTED either way: a reused sequence means a record that never
+            //    landed, and somebody recovering files deserves to know that happened.
+            //
             // `map_or(true, …)` rather than the newer `is_none_or`: this crate promises to build on
             // the Rust in `Cargo.toml`'s `rust-version`, and somebody recovering files on an old
             // machine is exactly who that promise is for.
-            let better = search
-                .found
-                .as_ref()
-                .map_or(true, |current| manifest.seq > current.manifest.seq);
+            let better = search.found.as_ref().map_or(true, |current| {
+                supersedes(Candidate::of(&manifest), Candidate::of(&current.manifest))
+            });
+            if let Some(current) = search.found.as_ref() {
+                if manifest.seq == current.manifest.seq && quilt_id != current.quilt_id {
+                    search.problems.push(format!(
+                        "two recovery lists share sequence {}: {} ({} items) and {} ({} items). \
+                         The newer one was never recorded. Using the one with more items.",
+                        manifest.seq,
+                        current.quilt_id,
+                        current.manifest.items.len(),
+                        quilt_id,
+                        manifest.items.len(),
+                    ));
+                }
+            }
             if better {
                 search.found = Some(Found {
                     quilt_id,
@@ -423,6 +491,65 @@ const MAX_RPC_BYTES: u64 = 32 * 1024 * 1024;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cand(seq: u64, items: usize, at: &str) -> Candidate<'_> {
+        Candidate {
+            seq,
+            items,
+            generated_at: at,
+        }
+    }
+
+    /// ⛔ This is the whole reason for the rule. The browser picks `seq` as "the sequence the
+    /// server knows, plus one", and the call that tells the server about it can fail without
+    /// stopping anything. The next upload then reuses that number for a list describing MORE
+    /// files. Comparing with `>` alone kept whichever the RPC listed first — about half the time
+    /// the older list, which is the one missing the newest files.
+    #[test]
+    fn a_tied_sequence_is_broken_by_which_list_describes_more() {
+        assert!(supersedes(
+            cand(5, 40, "2026-08-01T00:00:00Z"),
+            cand(5, 12, "2026-08-02T00:00:00Z")
+        ));
+        assert!(!supersedes(
+            cand(5, 12, "2026-08-02T00:00:00Z"),
+            cand(5, 40, "2026-08-01T00:00:00Z")
+        ));
+    }
+
+    /// ⛔ The other side of the same rule: a clock NEVER beats a sequence. Devices' clocks lie,
+    /// and the sequence is the ordering the account itself asserted.
+    #[test]
+    fn a_newer_clock_never_beats_a_higher_sequence() {
+        assert!(!supersedes(
+            cand(4, 999, "2099-01-01T00:00:00Z"),
+            cand(5, 1, "2026-08-01T00:00:00Z")
+        ));
+        assert!(supersedes(
+            cand(5, 1, "2026-08-01T00:00:00Z"),
+            cand(4, 999, "2099-01-01T00:00:00Z")
+        ));
+    }
+
+    /// Equal sequence AND equal count falls back to the clock — inside a tie only, where the
+    /// alternative is "whichever arrived first".
+    #[test]
+    fn an_equal_sequence_and_count_falls_back_to_the_clock() {
+        assert!(supersedes(
+            cand(5, 12, "2026-08-02T00:00:00Z"),
+            cand(5, 12, "2026-08-01T00:00:00Z")
+        ));
+        assert!(!supersedes(
+            cand(5, 12, "2026-08-01T00:00:00Z"),
+            cand(5, 12, "2026-08-02T00:00:00Z")
+        ));
+        // Identical on all three keeps the incumbent: the search has to be deterministic, so
+        // running it twice gives the same answer.
+        assert!(!supersedes(
+            cand(5, 12, "2026-08-01T00:00:00Z"),
+            cand(5, 12, "2026-08-01T00:00:00Z")
+        ));
+    }
 
     /// ⛔ The byte order is the whole test. A big-endian reading produces a perfectly well-formed
     /// blob id that simply does not exist, so the failure it causes is "your files are not there"
