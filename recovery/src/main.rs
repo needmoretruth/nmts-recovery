@@ -26,6 +26,16 @@
 //! see `args.rs` — and it is never typed into the control window either. Nothing here writes the
 //! code anywhere, and the only thing that ever crosses the network is a request for a public blob
 //! by its public id.
+//!
+//! ---
+//!
+//! Copyright (C) 2026 needmoretruth
+//!
+//! This program is free software: you can redistribute it and/or modify it under the terms of the
+//! GNU Affero General Public License, version 3 only, as published by the Free Software
+//! Foundation. It is distributed WITHOUT ANY WARRANTY; without even the implied warranty of
+//! MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the LICENSE file, or
+//! <https://www.gnu.org/licenses/agpl-3.0.html>.
 
 #![forbid(unsafe_code)]
 

@@ -12,6 +12,7 @@ It contacts **no NMTS server at any point**. It reads public Walrus aggregators 
 blobs you fetched yourself — and writes your files back out.
 
 * Licence: **GNU Affero General Public License v3.0** (see `LICENSE`).
+  Copyright © 2026 needmoretruth.
 * It adds **no cryptography of its own.** Every key derivation, every envelope, every stream
   decryption is a call into `crypto/`, which is the same engine the NMTS browser code compiles to
   WebAssembly. The format is NCF-3, documented in

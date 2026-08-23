@@ -4,6 +4,7 @@ version = "0.5.1"
 edition = "2021"
 rust-version = "1.75"
 description = "Recover files uploaded with NMTS using only an account code, a recovery list, and a public Walrus aggregator. No NMTS server is contacted."
+authors = ["needmoretruth"]
 license = "AGPL-3.0-only"
 publish = false
 
