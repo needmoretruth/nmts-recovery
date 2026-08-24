@@ -1,0 +1,143 @@
+# Builds one executable per desktop platform and attaches them to a GitHub release.
+#
+# WHY THIS EXISTS: until this workflow, getting this program meant installing a Rust toolchain and
+# building it. That is a fair ask of somebody auditing it and an unfair one of somebody who has
+# just lost access to their files — which is the only moment this program is for. It is also what
+# the NMTS command-line tool needs in order to fetch this one on a person's behalf.
+#
+# ⛔ RAW EXECUTABLES, NOT ARCHIVES. Every other project ships a .tar.gz or a .zip, and this one
+#    deliberately does not: the tool that downloads these has no archive reader and adding one
+#    would mean adding a dependency to a program whose whole point is that you can check what it
+#    does. One file per platform, downloaded and run.
+#
+# ⛔ LINUX IS BUILT AGAINST musl, ON PURPOSE. A binary linked against the runner's glibc refuses to
+#    start on any distribution older than the runner, with an error about a version of a library
+#    the reader has no reason to have heard of. A statically linked one runs on all of them.
+#
+# ⛔ IT REACTS TO A TAG ONLY — never to `pull_request`, for the reason written in build.yml, and
+#    never to a push on a branch, so that publishing is a deliberate act with a name.
+#
+# WHAT SHA256SUMS IS AND IS NOT. It is generated here from the files this run just built, and it
+# lets a downloader prove the bytes it received are the bytes this run produced. It does NOT prove
+# anything about who started the run — anybody able to push a tag to this repository can produce
+# both the binary and the sum. The thing worth checking is above it: the source is here, the
+# workflow that built it is this file, and the run is on the Actions tab.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            asset: nmts-recovery-linux-x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            asset: nmts-recovery-linux-aarch64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: nmts-recovery-macos-aarch64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            asset: nmts-recovery-macos-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: nmts-recovery-windows-x86_64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add the target
+        run: rustup target add ${{ matrix.target }}
+
+      # musl needs a C toolchain for the few crates that compile any C at all. Installing it is a
+      # no-op on the platforms that do not use it, so the step is guarded rather than duplicated.
+      - name: musl toolchain
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        working-directory: recovery
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # A binary that cannot start is worse than a missing one: the person who downloaded it is now
+      # debugging our build instead of recovering their files. Windows is skipped only because the
+      # cross-built ones cannot be run on their own runner, which is not the case here — every one
+      # of these is native, so every one of them is started once.
+      - name: It runs
+        working-directory: recovery
+        shell: bash
+        run: ./target/${{ matrix.target }}/release/nmts-recovery${{ runner.os == 'Windows' && '.exe' || '' }} --version
+
+      - name: Name it for the platform
+        shell: bash
+        working-directory: recovery
+        run: |
+          set -euo pipefail
+          src="target/${{ matrix.target }}/release/nmts-recovery${{ runner.os == 'Windows' && '.exe' || '' }}"
+          mkdir -p ../out
+          cp "$src" "../out/${{ matrix.asset }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: out/${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      # ⛔ The tag and the version in the manifest have to agree. They are written by hand in two
+      #    places, and a release whose name disagrees with what the program prints when asked is a
+      #    release nobody can reason about afterwards.
+      - name: The tag says what the manifest says
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          declared=$(grep -m1 '^version' recovery/Cargo.toml | cut -d'"' -f2)
+          tagged="${GITHUB_REF_NAME#v}"
+          if [ "$declared" != "$tagged" ]; then
+            echo "tag $GITHUB_REF_NAME does not match version $declared in recovery/Cargo.toml" >&2
+            exit 1
+          fi
+
+      - name: Sums
+        shell: bash
+        working-directory: out
+        run: |
+          set -euo pipefail
+          ls -1
+          sha256sum nmts-recovery-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Executables for Linux, macOS and Windows, built by the release workflow in this repository from the source at this tag. SHA256SUMS lists what this run produced; it proves the bytes you downloaded are the bytes it built, and nothing about who started it." \
+            out/*
