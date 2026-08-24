@@ -47,15 +47,21 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             asset: nmts-recovery-macos-aarch64
-          - os: macos-13
+          # ⛔ Built on the Apple Silicon runner rather than on an Intel one. GitHub's Intel macOS
+          #    runners no longer get picked up — a job asking for one sat queued indefinitely while
+          #    the other four finished in under two minutes — and one unobtainable runner would
+          #    hold back the whole release, because the publish step waits for every platform.
+          #    The Apple toolchain cross-builds this target from either host.
+          - os: macos-latest
             target: x86_64-apple-darwin
             asset: nmts-recovery-macos-x86_64
+            cross: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             asset: nmts-recovery-windows-x86_64.exe
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Add the target
         run: rustup target add ${{ matrix.target }}
@@ -71,10 +77,14 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       # A binary that cannot start is worse than a missing one: the person who downloaded it is now
-      # debugging our build instead of recovering their files. Windows is skipped only because the
-      # cross-built ones cannot be run on their own runner, which is not the case here — every one
-      # of these is native, so every one of them is started once.
+      # debugging our build instead of recovering their files. So every binary that CAN be started
+      # here is started here.
+      # ⚠ One cannot: the Intel macOS build is cross-built on an Apple Silicon runner, and this
+      #   step does not assume that machine will run it. That binary is therefore the one platform
+      #   whose "it starts at all" is not measured by this workflow, and saying so is the point of
+      #   this comment.
       - name: It runs
+        if: matrix.cross != true
         working-directory: recovery
         shell: bash
         run: ./target/${{ matrix.target }}/release/nmts-recovery${{ runner.os == 'Windows' && '.exe' || '' }} --version
@@ -88,7 +98,7 @@ jobs:
           mkdir -p ../out
           cp "$src" "../out/${{ matrix.asset }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: out/${{ matrix.asset }}
@@ -98,9 +108,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: out
           merge-multiple: true
