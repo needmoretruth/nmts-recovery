@@ -102,6 +102,27 @@ impl Window {
         panic!("the window never reached \"{want}\"; it is at {last}");
     }
 
+    /// Poll `/api/state` until a refusal note is there, or give up.
+    ///
+    /// ⛔ WHY THIS EXISTS RATHER THAN ONE READ. Handing the window a file it will refuse leaves the
+    ///    phase where it already was — `need-map` is both "nothing given yet" and "what you gave
+    ///    was refused" — so the phase proves nothing and the NOTE is the whole assertion. Reading
+    ///    state once races the window's own handling of the post: it passed here every time and
+    ///    failed on a loaded CI runner, which is exactly the shape of race that hides on a fast
+    ///    machine.
+    fn wait_for_note(&self) -> String {
+        let deadline = Instant::now() + PATIENCE;
+        let mut last = serde_json::Value::Null;
+        while Instant::now() < deadline {
+            last = self.state();
+            if last["phase"] == "need-map" && !last["note"].is_null() {
+                return last["note"].as_str().unwrap_or_default().to_string();
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        panic!("the window never said what was wrong; it is at {last}");
+    }
+
     fn state(&self) -> serde_json::Value {
         let answer = self.get("/api/state", Some(&self.token));
         assert_eq!(answer.status, 200, "state was refused: {}", answer.body);
@@ -365,17 +386,7 @@ fn a_file_that_is_not_a_map_is_said_so_and_the_window_carries_on() {
         "/api/map",
         &serde_json::json!({ "name": "notes.txt", "text": "hello" }).to_string(),
     );
-    let deadline = Instant::now() + PATIENCE;
-    let mut note = None;
-    while Instant::now() < deadline {
-        let s = w.state();
-        if s["phase"] == "need-map" && !s["note"].is_null() {
-            note = Some(s["note"].as_str().unwrap_or_default().to_string());
-            break;
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-    let note = note.expect("the window never said what was wrong");
+    let note = w.wait_for_note();
     assert!(note.contains("not an NMTS recovery list"), "{note}");
 }
 
@@ -712,13 +723,10 @@ fn a_kit_is_refused_by_name_with_the_terminal_command() {
         answer.body
     );
 
-    // What matters is the state it settles into, not the acknowledgement.
-    let state = w.state();
-    assert_eq!(
-        state["phase"], "need-map",
-        "a kit must not open the code prompt"
-    );
-    let note = state["note"].as_str().unwrap_or("");
+    // What matters is the state it settles into, not the acknowledgement — and `wait_for_note`
+    // holds the "must not open the code prompt" half, since it only returns while the phase is
+    // still `need-map`.
+    let note = w.wait_for_note();
     assert!(
         note.contains("recovery kit"),
         "the refusal must name the file as a kit: {note}"
