@@ -11,7 +11,9 @@ your files must still be recoverable, and you should not have to take anyone's w
 It contacts **no NMTS server at any point**. It reads public Walrus aggregators — or a folder of
 blobs you fetched yourself — and writes your files back out.
 
-* Licence: **GNU Affero General Public License v3.0** (see `LICENSE`).
+* Licence: **Apache-2.0** (see `LICENSE`) — it moved here from AGPL-3.0-only on 2026-08-30, and
+  copies already held under the AGPL stay under it. If you need different terms, write to
+  **nmts@nmts.me** and say why; requests are read and considered on their merits.
   Copyright © 2026 needmoretruth.
 * It adds **no cryptography of its own.** Every key derivation, every envelope, every stream
   decryption is a call into `crypto/`, which is the same engine the NMTS browser code compiles to

@@ -237,7 +237,7 @@ pub fn parse(argv: &[String]) -> Parsed {
                 //    neither is guessable from the other.
                 return Parsed::Print(
                     format!(
-                        "nmts-recovery {} — AGPL-3.0-only\nreads recovery lists up to NRM-{}\n",
+                        "nmts-recovery {} — Apache-2.0\nreads recovery lists up to NRM-{}\n",
                         env!("CARGO_PKG_VERSION"),
                         crate::mapfile::MAX_NRM_VERSION
                     ),
