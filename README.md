@@ -8,6 +8,11 @@ file is encrypted in your browser before it is uploaded, and every key comes fro
 that never leaves your device. This program is the other half of that promise — if NMTS disappears,
 your files must still be recoverable, and you should not have to take anyone's word for it.
 
+> **[한국어 문서](README.ko.md)**
+>
+> **Talk about NMTS — [Discord](https://discord.gg/pcmRkVmVZk).** Questions, ideas, and
+> what people are building with it. English or Korean; both are read.
+
 It contacts **no NMTS server at any point**. It reads public Walrus aggregators — or a folder of
 blobs you fetched yourself — and writes your files back out.
 

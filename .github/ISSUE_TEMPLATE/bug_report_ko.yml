@@ -1,0 +1,44 @@
+name: 결함 신고 (한국어)
+description: 문서에 적힌 것과 다르게 동작합니다.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⛔ **보안 문제라면 여기에 올리지 말아 주십시오.** **nmts@nmts.me** 로 메일을 주시거나,
+        계정이 필요 없는 https://nmts.me/ask 의 문의함을 쓰십시오. SECURITY.md 를 봐 주십시오.
+        영어로 쓰셔도 됩니다 — 둘 다 읽습니다.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 무엇이 일어났는가
+      description: 무엇을 하셨고, 기대하신 것 대신 무엇을 보셨는지.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 다시 보려면 어떻게 하는가
+      description: 명령이나 절차를 순서대로. 설명하지 마시고 실제 글자를 그대로 붙여 주십시오.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 버전
+      description: "`--version` 이 찍는 값, 또는 쓰고 계신 릴리스 버전."
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: 운영체제와 그 버전
+      placeholder: 예 — Ubuntu 24.04 · macOS 15.3 · Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: 출력
+      description: 오류 글이 있으면 전부. 코드로 보이므로 따로 꾸미실 필요 없습니다.
+      render: text
