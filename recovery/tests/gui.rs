@@ -88,39 +88,32 @@ impl Window {
         }
     }
 
-    /// Poll `/api/state` until `want` is the phase, or give up.
-    fn wait_for(&self, want: &str) -> serde_json::Value {
+    /// Poll `/api/state` until `settled` says it has, or give up.
+    fn poll(&self, what: &str, settled: impl Fn(&serde_json::Value) -> bool) -> serde_json::Value {
         let deadline = Instant::now() + PATIENCE;
         let mut last = serde_json::Value::Null;
         while Instant::now() < deadline {
             last = self.state();
-            if last["phase"] == want {
+            if settled(&last) {
                 return last;
-            }
-            thread::sleep(Duration::from_millis(150));
-        }
-        panic!("the window never reached \"{want}\"; it is at {last}");
-    }
-
-    /// Poll `/api/state` until a refusal note is there, or give up.
-    ///
-    /// ⛔ WHY THIS EXISTS RATHER THAN ONE READ. Handing the window a file it will refuse leaves the
-    ///    phase where it already was — `need-map` is both "nothing given yet" and "what you gave
-    ///    was refused" — so the phase proves nothing and the NOTE is the whole assertion. Reading
-    ///    state once races the window's own handling of the post: it passed here every time and
-    ///    failed on a loaded CI runner, which is exactly the shape of race that hides on a fast
-    ///    machine.
-    fn wait_for_note(&self) -> String {
-        let deadline = Instant::now() + PATIENCE;
-        let mut last = serde_json::Value::Null;
-        while Instant::now() < deadline {
-            last = self.state();
-            if last["phase"] == "need-map" && !last["note"].is_null() {
-                return last["note"].as_str().unwrap_or_default().to_string();
             }
             thread::sleep(Duration::from_millis(100));
         }
-        panic!("the window never said what was wrong; it is at {last}");
+        panic!("the window never {what}; it is at {last}");
+    }
+
+    fn wait_for(&self, want: &str) -> serde_json::Value {
+        self.poll(&format!("reached \"{want}\""), |s| s["phase"] == want)
+    }
+
+    /// ⛔ ONE READ IS A RACE that hides on a fast machine: `POST /api/map` hands the file to
+    ///    another thread and answers at once. And the phase cannot stand in for the note —
+    ///    `need-map` means both "nothing given yet" and "what you gave was refused".
+    fn wait_for_note(&self) -> String {
+        let s = self.poll("said what was wrong", |s| {
+            s["phase"] == "need-map" && !s["note"].is_null()
+        });
+        s["note"].as_str().unwrap_or_default().to_string()
     }
 
     fn state(&self) -> serde_json::Value {
@@ -723,9 +716,8 @@ fn a_kit_is_refused_by_name_with_the_terminal_command() {
         answer.body
     );
 
-    // What matters is the state it settles into, not the acknowledgement — and `wait_for_note`
-    // holds the "must not open the code prompt" half, since it only returns while the phase is
-    // still `need-map`.
+    // `wait_for_note` carries the "must not open the code prompt" half: it returns only while the
+    // phase is still `need-map`.
     let note = w.wait_for_note();
     assert!(
         note.contains("recovery kit"),
