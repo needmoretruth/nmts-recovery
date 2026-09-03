@@ -31,15 +31,28 @@ use nmts_crypto::manifest::{recovery_patch_name, RecoveryManifest};
 
 use crate::derive::sui_address;
 
-/// Sui JSON-RPC endpoints tried when the caller names none.
+/// Sui JSON-RPC endpoints tried when the caller names none, in order.
 ///
 /// ⚠ Public MIRRORS, not the official fullnodes, and that is not a preference: the official
 /// fullnodes retired JSON-RPC on both networks (measured by the NMTS team, 2026-07-29 testnet and
-/// 2026-08-03 mainnet). Mainnet is first because that is where live NMTS data is; testnet follows
-/// so an account from before the 2026-08-02 cutover still resolves. `--rpc` overrides both.
-pub const DEFAULT_RPCS: [&str; 2] = [
+/// 2026-08-03 mainnet). `--rpc` replaces the whole list.
+///
+/// ⭐ 2026-09-01 — two operators now, not one, and the testnet entry that had been here was
+/// measured DEAD that morning: `rpc-testnet.suiscan.xyz` completes the TCP handshake in 31 ms and
+/// then sends nothing for 12 seconds, three times running. It had been dead for eleven days. The
+/// hosts below all answered `sui_getChainIdentifier` with the right value the same morning.
+///
+/// ⛔ WHAT THE ORDER ACTUALLY DOES — read this before adding to it. [`owned_blob_ids`] returns
+/// the FIRST host that answers at all, so the list is a failover chain, not a sweep across
+/// networks: the testnet hosts are only ever asked when both mainnet hosts are unreachable. An
+/// account created before the 2026-08-02 mainnet cutover therefore needs `--rpc` naming a testnet
+/// node. Saying so here because the sentence that used to stand in this place claimed the
+/// opposite.
+pub const DEFAULT_RPCS: [&str; 4] = [
     "https://rpc-mainnet.suiscan.xyz",
-    "https://rpc-testnet.suiscan.xyz",
+    "https://sui-rpc.publicnode.com",
+    "https://sui-testnet-rpc.publicnode.com",
+    "https://testnet.suiet.app",
 ];
 
 /// How many pages of owned objects one address is walked for.
