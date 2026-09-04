@@ -8,6 +8,10 @@ encrypted in your browser before it is uploaded, and every key comes from an acc
 never leaves your device. This program is the other half of that promise. If NMTS disappears, your
 files must still be recoverable, and you should not have to take anyone's word for it.
 
+NMTS charges nothing for the service: storage is bought from the Walrus network, for a period,
+from the user's own wallet, and one developer builds and runs it. This program, the command-line
+tool and the encryption engine are open source under Apache-2.0.
+
 > **[한국어 문서](README.ko.md)** · Talk about NMTS on [Discord](https://discord.gg/pcmRkVmVZk),
 > in English or Korean.
 
