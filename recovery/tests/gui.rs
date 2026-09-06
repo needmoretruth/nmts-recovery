@@ -24,8 +24,8 @@ use std::time::{Duration, Instant};
 mod common;
 use common::Fixture;
 
-/// How long a test waits for something the program does on its own — deriving keys from an account
-/// code is deliberately slow (Argon2id, 64 MiB), so this is generous on purpose.
+/// How long a test waits for something the program does on its own — deriving keys from an NMTS
+/// key is deliberately slow (Argon2id, 64 MiB), so this is generous on purpose.
 const PATIENCE: Duration = Duration::from_secs(120);
 
 // ── Driving the program ───────────────────────────────────────────────────────────────────────
@@ -231,7 +231,7 @@ fn the_window_gives_the_files_back() {
     );
     assert_eq!(sent.status, 200, "the list was refused: {}", sent.body);
 
-    // The account code came from --code-file, so the program walks through "need-code" on its own.
+    // The NMTS key came from --code-file, so the program walks through "need-code" on its own.
     let ready = w.wait_for("ready");
     assert_eq!(ready["items"].as_array().expect("items").len(), 2);
     assert_eq!(ready["seq"], 4);
@@ -277,7 +277,7 @@ fn the_window_gives_the_files_back() {
     assert_eq!(std::fs::read(out.join("big.bin")).expect("big"), big);
 }
 
-/// ⛔ The account code must not appear in anything the program prints. It is read from a file here
+/// ⛔ The NMTS key must not appear in anything the program prints. It is read from a file here
 ///    rather than typed, so nothing echoes it — which is exactly the state a stray debug line would
 ///    quietly end, in the one program whose output somebody might paste into a support thread.
 #[test]
@@ -308,14 +308,8 @@ fn the_terminal_never_prints_the_account_code() {
         !dashed.is_empty() && bare.len() >= 32,
         "the fixture code is not a code"
     );
-    assert!(
-        !said.contains(dashed),
-        "the terminal printed the account code"
-    );
-    assert!(
-        !said.contains(&bare),
-        "the terminal printed the account code"
-    );
+    assert!(!said.contains(dashed), "the terminal printed the NMTS key");
+    assert!(!said.contains(&bare), "the terminal printed the NMTS key");
     // And it did say the things it is supposed to say, so an empty capture cannot pass the above.
     // (The address line itself was consumed while starting the window, which is how the token got
     // here at all — so this looks at what came after it.)
@@ -654,14 +648,14 @@ fn a_large_body_is_refused_on_routes_that_have_no_use_for_one() {
     assert_eq!(w.state()["phase"], "need-map");
 }
 
-/// ⛔ The account code must not have a way in through this channel. There is no route that takes
+/// ⛔ The NMTS key must not have a way in through this channel. There is no route that takes
 ///    one, and if one is ever added this test is what notices.
 ///
 /// ⚠ THIS TEST USED TO PROVE LESS THAN ITS NAME SAID (found 2026-08-20, adversarial review). It
 ///   checked four named routes for a `code` FIELD — and the way a code could actually arrive was
 ///   none of those: `/api/map` takes an arbitrary text body, and a recovery KIT is a text file with
-///   the account code inside it. The published README says "there is no route in the control
-///   channel that accepts an account code, and a test asserts it"; the test asserted the wrong
+///   the NMTS key inside it. The published README says "no route in the control channel takes
+///   an NMTS key, and a test asserts it"; the test asserted the wrong
 ///   thing, so the sentence was true only by luck. `/api/map` with a real kit is now in the list.
 #[test]
 fn no_route_accepts_an_account_code() {
@@ -681,7 +675,7 @@ fn no_route_accepts_an_account_code() {
         );
         assert!(
             answer.status == 404 || answer.status == 400,
-            "{target} did something with an account code (status {})",
+            "{target} did something with an NMTS key (status {})",
             answer.status
         );
     }
@@ -694,7 +688,7 @@ fn no_route_accepts_an_account_code() {
 /// ⛔ WHY THE WORDING IS PART OF THE TEST. The generic answer ("this file is not an NMTS recovery
 ///    list") sends a person who saved only the kit — the one-file artefact the product tells people
 ///    to keep — round the same loop again, and the loop runs through a browser that must never see
-///    their account code. The refusal has to name the file for what it is and give the command that
+///    their NMTS key. The refusal has to name the file for what it is and give the command that
 ///    works, or the design's rule and the person's only path are in contradiction.
 ///
 /// ⛔ The page refuses a kit BEFORE reading it, which is where the protection actually lives; this

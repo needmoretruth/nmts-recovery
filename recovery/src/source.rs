@@ -73,9 +73,9 @@ pub struct Endpoints {
 ///
 /// # ⛔ Why `recorded` is HELD BACK by default (2026-08-20)
 /// It used to be appended and contacted automatically, on the argument that the sealed document was
-/// "written by whoever holds the account code". **That argument died when the recovery kit started
-/// carrying the account code**: a kit handed to somebody is a document its author sealed with
-/// THEIR OWN code, so every field in it is attacker-chosen, and the program opens it with no
+/// "written by whoever holds the NMTS key". **That argument died when the recovery kit started
+/// carrying the NMTS key**: a kit handed to somebody is a document its author sealed with
+/// THEIR OWN key, so every field in it is attacker-chosen, and the program opens it with no
 /// prompt at all.
 ///
 /// And the safety sentence covered the wrong threat. Authenticating the bytes protects what
@@ -498,7 +498,7 @@ mod tests {
 
     /// ⛔ A HOST THE FILE NAMED IS NOT CONTACTED UNTIL SOMEBODY ASKS FOR IT.
     ///
-    /// The document is sealed, but a recovery kit carries the account code, so a kit somebody hands
+    /// The document is sealed, but a recovery kit carries the NMTS key, so a kit somebody hands
     /// you was sealed by them — this list of hosts included. Contacting one is a beacon whether or
     /// not the bytes that come back are genuine.
     #[test]

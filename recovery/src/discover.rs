@@ -1,12 +1,12 @@
-//! Finding an account's recovery list with nothing but the account code.
+//! Finding an account's recovery list with nothing but the NMTS key.
 //!
 //! # The whole idea in four lines
-//! A blob id on Walrus is a hash of the blob's own bytes, so nothing predicts one from an account
-//! code. Two other things are predictable, and together they are enough:
+//! A blob id on Walrus is a hash of the blob's own bytes, so nothing predicts one from an NMTS
+//! key. Two other things are predictable, and together they are enough:
 //!
-//!   1. the WALLET that paid for the storage comes from the account code (NCF-3 §1.3), and the
+//!   1. the WALLET that paid for the storage comes from the NMTS key (NCF-3 §1.3), and the
 //!      blob objects it registered are owned by it on Sui;
-//!   2. the NAME the recovery list is stored under inside a quilt comes from the account code too
+//!   2. the NAME the recovery list is stored under inside a quilt comes from the NMTS key too
 //!      (NCF-3 §2.5).
 //!
 //! So: derive the address, ask a Sui node what blob objects it owns, ask an aggregator each of
@@ -16,7 +16,7 @@
 //! # What this costs a person's privacy, stated rather than skipped
 //! The lookup itself tells a Sui RPC operator "somebody is interested in this address" and tells
 //! an aggregator "somebody asked for these patches". Both are public services being asked public
-//! questions. It does NOT hand either of them the account code, which never leaves this process.
+//! questions. It does NOT hand either of them the NMTS key, which never leaves this process.
 //!
 //! # Failure is quiet on purpose
 //! Every step can legitimately find nothing — the account may never have turned the
@@ -141,7 +141,7 @@ pub(crate) fn supersedes(candidate: Candidate<'_>, current: Candidate<'_>) -> bo
 
 /// Search the chain and the aggregators for this account's newest recovery list.
 ///
-/// `owner_override` is for accounts whose uploads were paid by a wallet the account code does not
+/// `owner_override` is for accounts whose uploads were paid by a wallet the NMTS key does not
 /// derive — an extension wallet, or an imported key. There is no way to compute such an address,
 /// so the person supplies it.
 pub fn find(

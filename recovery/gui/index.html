@@ -9,7 +9,7 @@
 
   What this page is allowed to do, and what it is not:
     * It shows what your recovery list holds and sends back which files you ticked.
-    * It never sees your account code. That is typed in the terminal window, on purpose.
+    * It never sees your NMTS key. That is typed in the terminal window, on purpose.
     * It holds no key, decrypts nothing, and writes no file. All of that happens in the program.
 
   Everything it talks to is http://127.0.0.1:<port>, which only this machine can reach, and every
@@ -161,7 +161,7 @@
     </p>
   </section>
 
-  <!-- 2. The terminal is asking for the account code. -->
+  <!-- 2. The terminal is asking for the NMTS key. -->
   <section class="panel hidden" id="step-code">
     <h2 id="code-head"></h2>
     <p id="code-help"></p>
@@ -220,9 +220,9 @@
       toggle: "한국어",
       mapHead: "1. Choose your recovery list",
       mapHelp: "The .nmtsmap file you saved from NMTS. It stays on this machine; nothing is uploaded.",
-      codeHead: "2. Type your account code in the terminal",
-      codeHelp: "Go to the terminal window that started this program. It is waiting for your account code.",
-      codeWhy: "Your account code is never typed into a browser. It is the master key for your account, and a browser page is the one place on this machine that other software can read.",
+      codeHead: "2. Type your NMTS key in the terminal",
+      codeHelp: "Go to the terminal window that started this program. It is waiting for your NMTS key.",
+      codeWhy: "Your NMTS key is never typed into a browser. It is the master key for your account, and a browser page is the one place on this machine that other software can read.",
       listHead: "3. Choose what to restore",
       factMap: "List file",
       factAccount: "Account",
@@ -245,7 +245,7 @@
       needSelection: "Tick at least one file first.",
       needDest: "Say where the files should go.",
       sendFail: "The program did not answer. It may have closed.",
-      kitRefused: "That is a recovery kit, not a recovery list. A kit holds your account code, and your account code must not go through a browser. Open a terminal and run:  nmts-recovery --map <that file>",
+      kitRefused: "That is a recovery kit, not a recovery list. A kit holds your NMTS key, and your NMTS key must not go through a browser. Open a terminal and run:  nmts-recovery --map <that file>",
       closed: "The program has closed. You can close this tab.",
       footer: "This page talks only to the program on this machine. Nothing here reaches the internet, and no NMTS server is contacted at any point.",
     },
@@ -255,9 +255,9 @@
       toggle: "English",
       mapHead: "1. 복구 목록 파일을 고르십시오",
       mapHelp: "NMTS에서 저장해 두신 .nmtsmap 파일입니다. 이 기계 밖으로 나가지 않습니다.",
-      codeHead: "2. 계정 코드는 터미널에 입력하십시오",
-      codeHelp: "이 프로그램을 실행한 터미널 창으로 가십시오. 계정 코드를 기다리고 있습니다.",
-      codeWhy: "계정 코드는 브라우저에 입력하지 않습니다. 계정의 모든 열쇠가 거기서 나오는데, 브라우저 화면은 이 기계에서 다른 프로그램이 들여다볼 수 있는 유일한 자리입니다.",
+      codeHead: "2. NMTS 키는 터미널에 입력하십시오",
+      codeHelp: "이 프로그램을 실행한 터미널 창으로 가십시오. NMTS 키를 기다리고 있습니다.",
+      codeWhy: "NMTS 키는 브라우저에 입력하지 않습니다. 계정의 모든 열쇠가 거기서 나오는데, 브라우저 화면은 이 기계에서 다른 프로그램이 들여다볼 수 있는 유일한 자리입니다.",
       listHead: "3. 되찾을 것을 고르십시오",
       factMap: "목록 파일",
       factAccount: "계정",
@@ -280,7 +280,7 @@
       needSelection: "파일을 하나 이상 골라 주십시오.",
       needDest: "파일을 놓을 자리를 적어 주십시오.",
       sendFail: "프로그램이 답하지 않습니다. 이미 닫힌 것일 수 있습니다.",
-      kitRefused: "그것은 복구 키트이고 복구 목록이 아닙니다. 키트에는 계정 코드가 들어 있고, 계정 코드는 브라우저를 지나가면 안 됩니다. 터미널에서 다음을 실행하십시오:  nmts-recovery --map <그 파일>",
+      kitRefused: "그것은 복구 키트이고 복구 목록이 아닙니다. 키트에는 NMTS 키가 들어 있고, NMTS 키는 브라우저를 지나가면 안 됩니다. 터미널에서 다음을 실행하십시오:  nmts-recovery --map <그 파일>",
       closed: "프로그램이 닫혔습니다. 이 탭을 닫으셔도 됩니다.",
       footer: "이 화면은 이 기계 안의 프로그램하고만 이야기합니다. 여기서 인터넷으로 나가는 것은 없고, NMTS 서버에는 한 번도 접속하지 않습니다.",
     },
@@ -471,11 +471,11 @@
   });
 
   // A recovery LIST is a JSON document, so it begins with "{". A recovery KIT is a text file for a
-  // person to read, and it begins with a heading — and further down it carries the account code IN
+  // person to read, and it begins with a heading — and further down it carries the NMTS key IN
   // THE CLEAR. That is why this reads a short head slice first and decides from it: a kit must never
-  // be read into this page at all, because reading it is what puts the account code in the browser.
+  // be read into this page at all, because reading it is what puts the NMTS key in the browser.
   //
-  // ⛔ The slice is bounded on purpose. The kit's own layout puts the theft warning above the code,
+  // ⛔ The slice is bounded on purpose. The kit's own layout puts the theft warning above the key,
   //    so a first line is a heading and nothing else, and this looks at far less than that.
   // ⛔ DO NOT "improve" this by reading the whole file and checking afterwards. By then it has been
   //    read, and the extension watching this page has already seen it.

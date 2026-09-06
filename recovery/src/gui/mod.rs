@@ -8,12 +8,12 @@
 //! no key, opens no blob, and writes no file. If this whole module were deleted, nothing about what
 //! a recovery *is* would change.
 //!
-//! # ⛔ The account code is typed in the terminal, never in the browser
+//! # ⛔ The NMTS key is typed in the terminal, never in the browser
 //! This is the one rule that shapes everything else here. A browser is the largest attack surface
 //! on a personal machine: extensions can read any page's contents, password managers offer to
-//! remember what looks like a credential, and form values outlive the tab. The account code is the
+//! remember what looks like a credential, and form values outlive the tab. The NMTS key is the
 //! master secret for an account — every key in NMTS derives from it — so it does not go near any of
-//! that. When the page has handed over a list file, this program asks for the code on the terminal
+//! that. When the page has handed over a list file, this program asks for the key on the terminal
 //! it was started from, and the page says to look there.
 //!
 //! # Why a page on this machine can be trusted at all
@@ -79,7 +79,7 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(60);
 enum Phase {
     /// Waiting for the browser to hand over a recovery list.
     NeedMap,
-    /// The list is readable and the terminal is asking for the account code.
+    /// The list is readable and the terminal is asking for the NMTS key.
     NeedCode,
     /// The list is open. The page is showing what it holds.
     Ready,
@@ -128,7 +128,7 @@ struct Session {
     /// The language of everything this run says, in the terminal and in the page alike.
     ///
     /// It lives here rather than in the parsed arguments because the page has a toggle and the
-    /// terminal has the account-code prompt: two surfaces, one run, and a person who switched the
+    /// terminal has the NMTS-key prompt: two surfaces, one run, and a person who switched the
     /// window to Korean and then got an English prompt would reasonably wonder which program was
     /// asking.
     lang: Lang,
@@ -203,7 +203,7 @@ impl Session {
 }
 
 /// What the server thread asks the main thread to do. Both of these need the terminal, which is the
-/// main thread's alone — the account-code prompt must not be racing a second one.
+/// main thread's alone — the NMTS-key prompt must not be racing a second one.
 enum Event {
     Map { name: String, text: String },
     Quit,
@@ -217,7 +217,7 @@ pub fn run(a: &Args) -> Result<ExitCode, String> {
 /// The control window, optionally starting from a list that was already FOUND on the network.
 ///
 /// `seed` is `(the opened list, the bundle it came out of, what to call it on screen)`. When it is
-/// present the account code has already been typed, so the page opens with the list open rather
+/// present the NMTS key has already been typed, so the page opens with the list open rather
 /// than asking for a file first.
 pub fn run_with(
     a: &Args,
@@ -296,7 +296,7 @@ pub fn run_with(
     Ok(ExitCode::SUCCESS)
 }
 
-/// Parse a wrapper, ask for the code on the terminal, open the list. Runs on the main thread.
+/// Parse a wrapper, ask for the key on the terminal, open the list. Runs on the main thread.
 fn open_map(shared: &Arc<Mutex<Session>>, name: &str, text: &str, a: &Args) {
     let lang = current_lang(shared);
     let fail = |note: String| {
@@ -309,11 +309,11 @@ fn open_map(shared: &Arc<Mutex<Session>>, name: &str, text: &str, a: &Args) {
     };
 
     // ⛔ A KIT MUST NOT BE OPENED HERE, EVER — and if one arrives, say why rather than calling it
-    //    a broken list. A kit carries the account code in the clear; the page is told to refuse one
+    //    a broken list. A kit carries the NMTS key in the clear; the page is told to refuse one
     //    before it reads the file, so reaching this line means that check was bypassed or the text
     //    came from somewhere else. Either way the answer is the terminal, not this window.
     //    ⛔ DO NOT "add kit support" here to make the GUI accept the one-file artefact. The reason
-    //    the terminal asks for the code is that a browser is the wrong place for it, and that does
+    //    the terminal asks for the key is that a browser is the wrong place for it, and that does
     //    not change because the code arrives inside a file instead of a text box.
     if crate::kitfile::looks_like_kit(text) {
         return fail(msg::KIT_NOT_IN_THE_BROWSER.get(lang).to_string());
@@ -411,7 +411,7 @@ fn open_map(shared: &Arc<Mutex<Session>>, name: &str, text: &str, a: &Args) {
 
 /// Fill the session from a list that was FOUND on the storage network, ready to restore.
 ///
-/// The account code has already been typed by the time this runs, so there is no `NeedCode` phase
+/// The NMTS key has already been typed by the time this runs, so there is no `NeedCode` phase
 /// to pass through — the page opens with the list already open.
 fn seed_from_network(
     shared: &Arc<Mutex<Session>>,
@@ -922,7 +922,7 @@ pub fn write_page(to: &Path) -> Result<(), String> {
 /// `/proc/<pid>/cmdline` is world-readable, so every other account on the machine can read it — and
 /// whoever holds the token can ask this program for the whole file index and tell it to write the
 /// decrypted files into a directory of their choosing. This program already refuses to take the
-/// ACCOUNT CODE as an argument for exactly that reason (`args.rs`); the token had no such rule.
+/// NMTS KEY as an argument for exactly that reason (`args.rs`); the token had no such rule.
 ///
 /// So the launcher is given a FILE PATH instead. A path is not a secret. The file it points at is
 /// created with owner-only permission and an unguessable name, and the token reaches the browser
@@ -1100,10 +1100,10 @@ mod tests {
 
     /// ⛔ THE PAGE MUST NOT READ A CHOSEN FILE WHOLE BEFORE IT KNOWS WHAT THE FILE IS.
     ///
-    /// A recovery kit is a text file with the account code written in it, and the rule this whole
-    /// program is built around is that the code is typed in the terminal and never goes near a
+    /// A recovery kit is a text file with the NMTS key written in it, and the rule this whole
+    /// program is built around is that the key is typed in the terminal and never goes near a
     /// browser. Until 2026-08-20 the picker read whatever was chosen, whole, and posted it here —
-    /// so choosing a kit put the code through the browser and only then got a refusal.
+    /// so choosing a kit put the key through the browser and only then got a refusal.
     ///
     /// ⚠ This is a check on HOW THE PAGE IS WRITTEN, which is normally the weakest kind of test.
     /// It is here because the page is JavaScript that no test in this crate can execute, and

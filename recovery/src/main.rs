@@ -1,10 +1,10 @@
 //! # nmts-recovery — get your files back without NMTS
 //!
-//! NMTS encrypts every file in the browser before it is uploaded, and the keys come from the
-//! account code. That design has an obligation attached to it: if NMTS disappears, the files must
-//! still be recoverable, and the person must not have to take our word for it. This program is
-//! that obligation, discharged — it needs the account code and the recovery list, reads public
-//! Walrus aggregators, and **contacts no NMTS server at any point**.
+//! NMTS encrypts every file in the browser before it is uploaded, and every one of those keys is
+//! computed from the NMTS key. That design has an obligation attached to it: if NMTS disappears,
+//! the files must still be recoverable, and the person must not have to take our word for it. This
+//! program is that obligation, discharged — it needs the NMTS key and the recovery list, reads
+//! public Walrus aggregators, and **contacts no NMTS server at any point**.
 //!
 //! ## Two ways to run it, one program underneath
 //! * In the terminal: `--map FILE --out DIR`, and everything is printed as it happens.
@@ -15,16 +15,16 @@
 //! ## What it does not do, stated plainly
 //! * It cannot find your files without the recovery list. The list is what holds each file's key
 //!   and where its pieces are stored. Blob addresses on Walrus come from the CONTENT, so nothing
-//!   derives them from an account code; the list is the index, and today it lives either in NMTS's
+//!   derives them from an NMTS key; the list is the index, and today it lives either in NMTS's
 //!   database or in the `.nmtsmap` file you saved.
 //! * It cannot recover anything you deleted. Deletion in NMTS destroys the key, and the key is
 //!   what this program needs.
 //! * It cannot prove a blob is still stored. It finds out by fetching it.
 //!
-//! ## The account code
+//! ## The NMTS key
 //! It is read from the terminal, or from `--code-file`. ⛔ There is no `--code` flag, on purpose —
 //! see `args.rs` — and it is never typed into the control window either. Nothing here writes the
-//! code anywhere, and the only thing that ever crosses the network is a request for a public blob
+//! key anywhere, and the only thing that ever crosses the network is a request for a public blob
 //! by its public id.
 //!
 //! ---
@@ -78,8 +78,8 @@ fn main() -> ExitCode {
     };
 
     let outcome = match a.mode {
-        // The list is found BEFORE the window opens, because finding it needs the account code
-        // and the account code is typed in the terminal — never in the browser.
+        // The list is found BEFORE the window opens, because finding it needs the NMTS key
+        // and the NMTS key is typed in the terminal — never in the browser.
         Mode::Gui if a.find => find_on_network(&a, a.lang).and_then(|(manifest, quilt_id)| {
             let name = msg::FIND_LIST_NAME.get(a.lang).to_string();
             gui::run_with(&a, Some((manifest, quilt_id, name)))
@@ -106,7 +106,7 @@ fn write_gui(a: &args::Args) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Print everything an account code turns into. No list, no network, nothing written.
+/// Print everything an NMTS key turns into. No list, no network, nothing written.
 fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
     let lang = a.lang;
     let code = read_account_code(a.code_file.as_deref(), lang)?;
@@ -173,7 +173,7 @@ fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
 
 fn run(a: &args::Args) -> Result<ExitCode, String> {
     let lang = a.lang;
-    // Two ways in, one place they meet. Either a person hands over a file, or the account code is
+    // Two ways in, one place they meet. Either a person hands over a file, or the NMTS key is
     // used to go and look for the list where it is stored (NCF-3 §2.5).
     let (manifest, own_quilt) = if a.find {
         let (m, quilt) = find_on_network(a, lang)?;
@@ -184,7 +184,7 @@ fn run(a: &args::Args) -> Result<ExitCode, String> {
     proceed(&manifest, own_quilt.as_deref(), a, lang)
 }
 
-/// Look the recovery list up on the storage network with nothing but the account code.
+/// Look the recovery list up on the storage network with nothing but the NMTS key.
 fn find_on_network(a: &args::Args, lang: Lang) -> Result<(RecoveryManifest, String), String> {
     let code = read_account_code(a.code_file.as_deref(), lang)?;
     let keys = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
@@ -248,7 +248,7 @@ fn open_from_file(
     a: &args::Args,
     lang: Lang,
 ) -> Result<(RecoveryManifest, Option<String>), String> {
-    // ⛔ Wrapped because THIS FILE MAY BE A KIT, and a kit has the account code written in it in
+    // ⛔ Wrapped because THIS FILE MAY BE A KIT, and a kit has the NMTS key written in it in
     //    the clear. The extracted field is cleared on its own; the whole file's text is the other
     //    copy, and it is the larger one.
     let raw = Zeroizing::new(
@@ -378,7 +378,7 @@ fn parse_list(raw: &str, lang: Lang) -> Result<mapfile::MapFile, String> {
     }
 }
 
-/// Open a recovery kit and take the list — and the account code — out of it.
+/// Open a recovery kit and take the list — and the NMTS key — out of it.
 fn open_kit(
     raw: &str,
     lang: Lang,
@@ -403,7 +403,7 @@ fn open_kit(
     let wrapper = parse_list(&list.to_string(), lang)?;
     // ⛔ The kit says which account it is for, and so does the list sealed inside it. They come
     //    from the same moment, so they agree — unless somebody assembled this file by hand, in
-    //    which case a person should hear it before their account code goes anywhere near it.
+    //    which case a person should hear it before their NMTS key goes anywhere near it.
     if kit.account_id != wrapper.account_id {
         return Err(format!(
             "{} — the kit is for account {} and the list inside it is for {}.",
@@ -448,7 +448,7 @@ fn print_summary(manifest: &RecoveryManifest, planned: &[restore::PlannedItem<'_
 ///    and this program deliberately ignores them: anyone holding the file can edit that header, and
 ///    the fields worth printing are URLs — "here is where to download the program" taken from an
 ///    attacker-editable line is exactly the sentence not to print. What is shown here came out of
-///    an envelope that only the account code opens.
+///    an envelope that only the NMTS key opens.
 fn print_list_about(manifest: &RecoveryManifest, lang: Lang) {
     let Some(meta) = manifest.meta.as_ref() else {
         return;
@@ -595,7 +595,7 @@ fn do_restore(
     }
 }
 
-/// Read the account code: from a file if asked, otherwise from the terminal.
+/// Read the NMTS key: from a file if asked, otherwise from the terminal.
 ///
 /// ⛔ Terminal echo is turned off on every platform this program builds for, and if that fails the
 ///    person is TOLD rather than left to assume otherwise. Silently echoing a secret that the
@@ -604,7 +604,7 @@ pub(crate) fn read_account_code(
     code_file: Option<&Path>,
     lang: Lang,
 ) -> Result<AccountCode, String> {
-    // ⛔ `Zeroizing`, not `String`. What is in this variable is the account code in the clear, and
+    // ⛔ `Zeroizing`, not `String`. What is in this variable is the NMTS key in the clear, and
     //    a plain `String` leaves it in freed heap memory when it goes away — where a core dump or a
     //    swapped-out page outlives the run. `AccountCode` clears itself; this is the text on the
     //    way in, which used to be the uncovered half.
@@ -617,7 +617,7 @@ pub(crate) fn read_account_code(
     parse_account_code(&raw, lang)
 }
 
-/// Turn text into an account code, whatever it was read from.
+/// Turn text into an NMTS key, whatever it was read from.
 pub(crate) fn parse_account_code(raw: &str, lang: Lang) -> Result<AccountCode, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {

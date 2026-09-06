@@ -27,8 +27,8 @@ impl Line {
 }
 
 pub const ASK_CODE: Line = Line(
-    "Account code (32 letters and digits, dashes optional): ",
-    "계정 코드 (글자와 숫자 32개, 붙임표는 있어도 없어도 됩니다): ",
+    "NMTS key (32 letters and digits, dashes optional): ",
+    "NMTS 키 (글자와 숫자 32개, 붙임표는 있어도 없어도 됩니다): ",
 );
 
 pub const ECHO_WARNING: Line = Line(
@@ -36,22 +36,19 @@ pub const ECHO_WARNING: Line = Line(
     "⚠ 이 창은 입력한 글자를 그대로 보여 줍니다. 화면을 보는 사람이 없는지 확인하십시오.",
 );
 
-pub const CODE_EMPTY: Line = Line(
-    "No account code was entered.",
-    "계정 코드가 입력되지 않았습니다.",
-);
+pub const CODE_EMPTY: Line = Line("No NMTS key was entered.", "NMTS 키가 입력되지 않았습니다.");
 
 pub const CODE_MALFORMED: Line = Line(
-    "That is not a valid account code. Check for a mistyped character; the last character is a \
+    "That is not a valid NMTS key. Check for a mistyped character; the last character is a \
      check symbol, so a single typo is caught here rather than later.",
-    "올바른 계정 코드가 아닙니다. 잘못 입력한 글자가 있는지 확인하십시오. 마지막 글자가 검사용이라 \
+    "올바른 NMTS 키가 아닙니다. 잘못 입력한 글자가 있는지 확인하십시오. 마지막 글자가 검사용이라 \
      한 글자만 틀려도 여기서 걸립니다.",
 );
 
 pub const CODE_WRONG_ACCOUNT: Line = Line(
-    "This account code does not belong to this recovery list. The code is valid, but it identifies \
-     a different account. Check that you are using the file saved from this account.",
-    "이 계정 코드는 이 복구 목록의 것이 아닙니다. 코드 자체는 올바르지만 다른 계정을 가리킵니다. \
+    "This NMTS key does not belong to this recovery list. The key is valid, but it identifies a \
+     different account. Check that you are using the file saved from this account.",
+    "이 NMTS 키는 이 복구 목록의 것이 아닙니다. 키 자체는 올바르지만 다른 계정을 가리킵니다. \
      이 계정에서 저장한 파일이 맞는지 확인하십시오.",
 );
 
@@ -62,22 +59,22 @@ pub const MAP_NOT_A_MAP: Line = Line(
 
 /// Said when a recovery KIT is offered to the control page instead of a recovery list.
 ///
-/// ⛔ A kit holds the account code in the clear. The whole design of this program says the code is
+/// ⛔ A kit holds the NMTS key in the clear. The whole design of this program says the key is
 /// typed in the terminal and never goes near a browser, and a kit chosen in the page's file picker
 /// walks straight past that. So the page refuses a kit before it reads one, and this sentence is
 /// what it says — with the command that does work, because a person who saved only the kit has no
 /// other file to offer and must not be left at a dead end.
 pub const KIT_NOT_IN_THE_BROWSER: Line = Line(
-    "That is a recovery kit, not a recovery list. A kit holds your account code, and your account \
-     code must not go through a browser. Open a terminal and run:  nmts-recovery --map <that file>",
-    "그것은 복구 키트이고 복구 목록이 아닙니다. 키트에는 계정 코드가 들어 있고, 계정 코드는 \
+    "That is a recovery kit, not a recovery list. A kit holds your NMTS key, and your NMTS key \
+     must not go through a browser. Open a terminal and run:  nmts-recovery --map <that file>",
+    "그것은 복구 키트이고 복구 목록이 아닙니다. 키트에는 NMTS 키가 들어 있고, NMTS 키는 \
      브라우저를 지나가면 안 됩니다. 터미널에서 다음을 실행하십시오:  nmts-recovery --map <그 파일>",
 );
 
 pub const MAP_WILL_NOT_OPEN: Line = Line(
-    "The recovery list would not open. The account code is right for this account, so the file \
+    "The recovery list would not open. The NMTS key is right for this account, so the file \
      itself has been changed or damaged since it was saved.",
-    "복구 목록이 열리지 않았습니다. 계정 코드는 이 계정의 것이 맞으므로, 파일 자체가 저장된 \
+    "복구 목록이 열리지 않았습니다. NMTS 키는 이 계정의 것이 맞으므로, 파일 자체가 저장된 \
      뒤에 바뀌었거나 손상된 것입니다.",
 );
 
@@ -197,9 +194,9 @@ pub const UNKNOWN_NETWORK: Line = Line(
 // ── Looking the list up on the storage network ───────────────────────────────────────────────
 
 pub const FIND_LOOKING: Line = Line(
-    "Looking for your recovery list on the storage network. Your account code stays here; what \
+    "Looking for your recovery list on the storage network. Your NMTS key stays here; what \
      goes out is a question about these public addresses:",
-    "저장망에서 복구 목록을 찾고 있습니다. 계정 코드는 이 기계 밖으로 나가지 않고, 밖으로 나가는 \
+    "저장망에서 복구 목록을 찾고 있습니다. NMTS 키는 이 기계 밖으로 나가지 않고, 밖으로 나가는 \
      것은 아래 공개 주소에 대한 물음뿐입니다:",
 );
 
@@ -212,15 +209,15 @@ pub const FIND_UNDER: Line = Line("held by", "가진 주소");
 pub const FIND_BUNDLES_SEEN: Line = Line("bundles were checked", "개의 꾸러미를 확인했습니다");
 
 pub const FIND_NOTHING: Line = Line(
-    "No recovery list was found on the storage network for this account code. Three things make \
+    "No recovery list was found on the storage network for this NMTS key. Three things make \
      that normal rather than alarming: the account may never have turned the storage-network copy \
      on; the uploads may have been paid for by a browser-extension wallet or an imported key, \
-     whose address an account code cannot derive — pass it with --owner; or the account may hold \
+     whose address an NMTS key cannot derive — pass it with --owner; or the account may hold \
      only large files, which are stored on their own rather than in bundles. A recovery list file \
      you saved, or a recovery kit, still works: pass it with --map.",
-    "이 계정 코드로는 저장망에서 복구 목록을 찾지 못했습니다. 놀랄 일이 아닌 경우가 셋입니다. \
+    "이 NMTS 키로는 저장망에서 복구 목록을 찾지 못했습니다. 놀랄 일이 아닌 경우가 셋입니다. \
      저장망 사본을 켠 적이 없거나, 확장 프로그램 지갑이나 가져온 개인 키로 저장 비용을 냈거나 \
-     (그 주소는 계정 코드로 계산할 수 없습니다 — --owner 로 알려 주십시오), 큰 파일만 있어서 \
+     (그 주소는 NMTS 키로 계산할 수 없습니다 — --owner 로 알려 주십시오), 큰 파일만 있어서 \
      꾸러미가 아니라 따로 올라가 있는 경우입니다. 저장해 두신 복구 목록 파일이나 복구 키트가 \
      있으면 --map 으로 그대로 쓰실 수 있습니다.",
 );
@@ -240,9 +237,9 @@ pub const FIND_TRUNCATED: Line = Line(
 pub const OWN_QUILT_UNKNOWN: Line = Line(
     "is stored in the bundle this recovery list itself came from, and this list was read from a \
      file, so there is nothing here that says which bundle that was. Run this again pointing at \
-     the account code instead of the file, and the list will be found where it is stored.",
+     the NMTS key instead of the file, and the list will be found where it is stored.",
     "이 복구 목록이 실려 있던 꾸러미 안에 있습니다. 그런데 이 목록은 파일에서 읽었고, 파일에는 \
-     그것이 어느 꾸러미였는지가 적혀 있지 않습니다. 파일 대신 계정 코드로 다시 실행하시면 목록을 \
+     그것이 어느 꾸러미였는지가 적혀 있지 않습니다. 파일 대신 NMTS 키로 다시 실행하시면 목록을 \
      그것이 저장된 자리에서 찾습니다.",
 );
 
@@ -267,8 +264,8 @@ pub const GUI_LOCAL_ONLY: Line = Line(
 );
 
 pub const GUI_CODE_STAYS_HERE: Line = Line(
-    "  Your account code is typed HERE, in this terminal — never in the browser.",
-    "  계정 코드는 브라우저가 아니라 바로 이 창에 입력하십시오.",
+    "  Your NMTS key is typed HERE, in this terminal — never in the browser.",
+    "  NMTS 키는 브라우저가 아니라 바로 이 창에 입력하십시오.",
 );
 
 pub const GUI_OPENED: Line = Line(
@@ -277,9 +274,9 @@ pub const GUI_OPENED: Line = Line(
 );
 
 pub const GUI_ASK_IN_TERMINAL: Line = Line(
-    "The window has handed over a recovery list. It needs your account code now, and it is asking \
+    "The window has handed over a recovery list. It needs your NMTS key now, and it is asking \
      here rather than in the browser on purpose.",
-    "화면에서 복구 목록을 넘겨받았습니다. 이제 계정 코드가 필요한데, 브라우저가 아니라 여기서 묻는 \
+    "화면에서 복구 목록을 넘겨받았습니다. 이제 NMTS 키가 필요한데, 브라우저가 아니라 여기서 묻는 \
      것은 일부러 그렇게 한 것입니다.",
 );
 
@@ -320,7 +317,7 @@ pub const GUI_PAGE_WRITTEN: Line = Line(
      --gui 로 실행하고 거기 찍히는 주소를 여십시오.",
 );
 
-// ── The recovery kit, and what a code derives ────────────────────────────────────────────────
+// ── The recovery kit, and what a key derives ─────────────────────────────────────────────────
 
 pub const KIT_OPENED: Line = Line(
     "This is a recovery kit, and the recovery list is inside it.",
@@ -328,9 +325,9 @@ pub const KIT_OPENED: Line = Line(
 );
 
 pub const KIT_CARRIES_CODE: Line = Line(
-    "⚠ This kit carries your account code in the clear, so this program is not asking for it. \
+    "⚠ This kit carries your NMTS key in the clear, so this program is not asking for it. \
      Anyone who reads this file can do exactly what you are about to do.",
-    "⚠ 이 키트에는 계정 코드가 그대로 들어 있어서 따로 묻지 않습니다. 이 파일을 읽을 수 있는 \
+    "⚠ 이 키트에는 NMTS 키가 그대로 들어 있어서 따로 묻지 않습니다. 이 파일을 읽을 수 있는 \
      사람은 지금 하시려는 일을 똑같이 할 수 있습니다.",
 );
 
@@ -353,10 +350,7 @@ pub const KIT_TOO_NEW: Line = Line(
      쓰십시오. 아무것도 읽지 않았습니다.",
 );
 
-pub const DERIVE_HEAD: Line = Line(
-    "What this account code derives:",
-    "이 계정 코드에서 나오는 것:",
-);
+pub const DERIVE_HEAD: Line = Line("What this NMTS key derives:", "이 NMTS 키에서 나오는 것:");
 
 pub const DERIVE_ACCOUNT_ID: Line = Line("Account id", "계정 식별자");
 pub const DERIVE_FINGERPRINT: Line = Line("Fingerprint", "지문");
@@ -378,22 +372,22 @@ pub const DERIVE_SECRET_WARNING: Line = Line(
 );
 
 pub const DERIVE_AI_HEAD: Line = Line(
-    "AI accounts this code makes:",
-    "이 코드에서 나오는 AI 계정:",
+    "AI accounts this NMTS key makes:",
+    "이 NMTS 키에서 나오는 AI 계정:",
 );
 
 pub const DERIVE_AI_WARNING: Line = Line(
-    "⛔ ACCOUNT CODES FOLLOW. Each line is a full account code for a sub-account — whoever reads \
-     one is that sub-account, and can read everything stored under it. They are about to be in \
-     this terminal's history. The code above them cannot be worked out from any of them.",
-    "⛔ 아래는 계정 코드입니다. 한 줄이 하위 계정 하나의 계정 코드이고, 이것을 읽는 사람은 그 \
+    "⛔ NMTS KEYS FOLLOW. Each line is a full NMTS key for a sub-account — whoever reads one is \
+     that sub-account, and can read everything stored under it. They are about to be in this \
+     terminal's history. The key above them cannot be worked out from any of them.",
+    "⛔ 아래는 NMTS 키입니다. 한 줄이 하위 계정 하나의 NMTS 키이고, 이것을 읽는 사람은 그 \
      계정이 되어 그 안의 모든 것을 볼 수 있습니다. 지금부터 이 창의 기록에 남습니다. 다만 이 \
-     코드들로 위의 계정 코드를 알아낼 수는 없습니다.",
+     키들로 위의 NMTS 키를 알아낼 수는 없습니다.",
 );
 
 pub const DERIVE_AI_HINT: Line = Line(
-    "Add --ai-accounts to also print the AI-account codes this code makes.",
-    "이 코드에서 나오는 AI 계정 코드까지 보시려면 --ai-accounts 를 붙이십시오.",
+    "Add --ai-accounts to also print the NMTS keys of the AI accounts this key makes.",
+    "이 NMTS 키에서 나오는 AI 계정의 NMTS 키까지 보시려면 --ai-accounts 를 붙이십시오.",
 );
 
 pub const DERIVE_NOTHING_ELSE: Line = Line(

@@ -28,7 +28,7 @@ pub const MAX_WRAPPER_VERSION: u64 = 2;
 ///
 /// Kept beside the wrapper's own ceiling because the two move independently — NRM-2 shipped
 /// without touching the shell. The check is here rather than in the crypto crate because refusing
-/// early means the account code is never even asked for on a list this build cannot use.
+/// early means the NMTS key is never even asked for on a list this build cannot use.
 ///
 /// ⭐ Taken FROM the crypto crate rather than written out again (2026-08-18). It had been left at
 /// `2` while the document format reached 3, so this build would have refused a list it could read

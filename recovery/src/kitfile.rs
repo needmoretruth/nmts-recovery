@@ -3,11 +3,11 @@
 //! # Two files, and only one of them is dangerous
 //! NMTS hands a person two downloads, and the difference between them is the whole security story:
 //!
-//! * the **recovery list** (`.nmtsmap`) — the sealed index. Useless on its own; the account code
+//! * the **recovery list** (`.nmtsmap`) — the sealed index. Useless on its own; the NMTS key
 //!   opens it. Losing control of it costs nothing.
-//! * the **recovery kit** (`.txt`) — the account code **in the clear**, and since kit version 2 the
+//! * the **recovery kit** (`.txt`) — the NMTS key **in the clear**, and since kit version 2 the
 //!   recovery list embedded alongside it. ⛔ Whoever holds this file holds the account: every file,
-//!   and the wallet, because the same code derives both.
+//!   and the wallet, because the same key derives both.
 //!
 //! This program reads either. When it is given a kit it says so out loud, because a person who
 //! pointed at the wrong file should find out from a sentence rather than from the absence of a
@@ -33,7 +33,7 @@ pub const FORMAT_MARKER: &str = "nmts-recovery-kit";
 ///
 /// v1 kits exist and are NOT readable here on purpose: they carry no recovery list (the field did
 /// not exist) and no fixed markers, so there is nothing in one this program could act on. A person
-/// holding a v1 kit still has their account code printed in it, which is what it was for.
+/// holding a v1 kit still has their NMTS key printed in it, which is what it was for.
 pub const MAX_KIT_VERSION: u64 = 2;
 
 /// What a kit says, once the machine block has been found.
@@ -42,7 +42,7 @@ pub struct KitFile {
     pub format: String,
     pub version: u64,
     pub account_id: String,
-    /// The account code, in the clear. ⛔ Never printed, never written anywhere by this program.
+    /// The NMTS key, in the clear. ⛔ Never printed, never written anywhere by this program.
     ///
     /// ⛔ `Zeroizing` rather than `String`: this is the one field in the file that opens the whole
     /// account, and it is here in plaintext. The wrapper clears it when this value goes away, and
@@ -56,7 +56,7 @@ pub struct KitFile {
 /// Read a string straight into the wrapper that clears it.
 ///
 /// ⛔ Not "read a `String`, then wrap it". `Zeroizing::new` takes ownership of the very buffer
-/// serde built, so exactly one copy of the account code ever exists and that copy is the one that
+/// serde built, so exactly one copy of the NMTS key ever exists and that copy is the one that
 /// gets cleared. Wrapping a value that was first stored somewhere else would leave the first one
 /// behind, which is the whole thing this is here to prevent.
 fn into_zeroizing<'de, D>(d: D) -> Result<Option<zeroize::Zeroizing<String>>, D::Error>

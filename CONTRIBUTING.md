@@ -19,7 +19,7 @@ cargo test
 ```
 
 ⚠ **The most valuable thing you can test is the thing the program is for.** Take a recovery list
-and an account code, run it against the public aggregators, and check that the bytes that come out
+and an NMTS key, run it against the public aggregators, and check that the bytes that come out
 are the bytes that went in. If they are not, that is the report worth writing.
 
 ## What is welcome

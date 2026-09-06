@@ -1,7 +1,7 @@
 # For programs and agents working in this repository
 
 This is the NMTS recovery program: one executable that rebuilds a person's files from the storage
-network with no NMTS server involved, using only the account code and the recovery list. Its
+network with no NMTS server involved, using only the NMTS key and the recovery list. Its
 purpose is to keep working when nothing else does, so the rules below are about not adding
 dependencies on things that can disappear.
 
@@ -18,5 +18,5 @@ dependencies on things that can disappear.
 ## How to check your work
 
 Run the crate's tests and clippy over all targets; both must be clean. The `--derive` mode prints
-the keys an account code yields, and `--derive --ai-accounts` the codes of the sub-accounts
+the keys an NMTS key yields, and `--derive --ai-accounts` the NMTS keys of the sub-accounts
 derived under it; both are checked against the crypto crate's vectors.

@@ -1,16 +1,16 @@
 //! Command-line parsing, written by hand.
 //!
 //! # Why not a parsing crate
-//! This program's entire value is that a stranger can read all of it before typing their account
-//! code into it. A general-purpose argument parser is several thousand lines of someone else's
+//! This program's entire value is that a stranger can read all of it before typing their NMTS
+//! key into it. A general-purpose argument parser is several thousand lines of someone else's
 //! code sitting in front of the one input that must never leak, and it buys us derive macros and
 //! shell completions we do not need for a dozen flags. A hundred lines here cost less to audit than
 //! one dependency, and there is no version of this file that can surprise a reader.
 //!
-//! # ⛔ The account code is not an option here, and that is deliberate
+//! # ⛔ The NMTS key is not an option here, and that is deliberate
 //! There is no `--code` flag anywhere in this program. A secret passed as an argument is written
 //! to the shell's history file, is visible in `ps` to every other user on the machine, and is
-//! captured verbatim by CI logs and crash reporters. The code is read from the terminal, or from
+//! captured verbatim by CI logs and crash reporters. The key is read from the terminal, or from
 //! a file the caller controls the permissions of. See `read_account_code` in `main.rs`.
 //!
 //! # English is the default, in every environment
@@ -34,7 +34,7 @@ pub enum Mode {
     Gui,
     /// Write the GUI page out as a file and stop. Nothing else happens.
     WriteGui,
-    /// Print what the account code derives — no list, no network, nothing written.
+    /// Print what the NMTS key derives — no list, no network, nothing written.
     Derive,
 }
 
@@ -55,7 +55,7 @@ pub struct Args {
     /// The `.nmtsmap` file. Empty in [`Mode::Gui`] until the browser picks one, and when the list
     /// is to be looked for on the storage network instead ([`Args::find`]).
     pub map: PathBuf,
-    /// Look the recovery list up on the storage network from the account code alone.
+    /// Look the recovery list up on the storage network from the NMTS key alone.
     ///
     /// Explicit rather than inferred from an absent `--map`, because the two mistakes are not
     /// symmetric: a mistyped path should say the file is missing, not quietly start asking public
@@ -63,20 +63,20 @@ pub struct Args {
     pub find: bool,
     /// Sui JSON-RPC endpoints for `--find`, in order. Empty means the built-in list.
     pub rpcs: Vec<String>,
-    /// The wallet address that paid for the uploads, when the account code does not derive it.
+    /// The wallet address that paid for the uploads, when the NMTS key does not derive it.
     ///
     /// For accounts that upload through a browser-extension wallet or an imported key: their blob
-    /// objects are owned by an address nothing can compute from the code, so the person gives it.
+    /// objects are owned by an address nothing can compute from the key, so the person gives it.
     pub owner: Option<String>,
     /// Where restored files go. Required for [`Mode::Restore`]; a starting value in [`Mode::Gui`].
     pub out: Option<PathBuf>,
-    /// A file holding the account code, instead of typing it.
+    /// A file holding the NMTS key, instead of typing it.
     pub code_file: Option<PathBuf>,
     /// Aggregators to try, in order. Empty means the built-in list.
     pub aggregators: Vec<String>,
     /// May the run read from endpoints the LIST names, as well as the ones built into this program?
     ///
-    /// ⛔ Off unless asked. A recovery kit carries the account code, so a kit somebody hands you is
+    /// ⛔ Off unless asked. A recovery kit carries the NMTS key, so a kit somebody hands you is
     /// a document they sealed themselves — every field in it is theirs, including this list of
     /// hosts. Contacting one is a beacon: it tells its operator the address you recover from and
     /// the moment you did it. The bytes are authenticated either way, which protects what arrives
@@ -98,9 +98,9 @@ pub struct Args {
     pub wallets: u32,
     /// Whether [`Mode::Derive`] also prints private keys.
     pub secrets: bool,
-    /// Whether [`Mode::Derive`] also prints the AI-account codes (NCF-3 §1.5).
+    /// Whether [`Mode::Derive`] also prints the AI accounts' NMTS keys (NCF-3 §1.5).
     pub ai_accounts: bool,
-    /// How many levels of AI accounts `--ai-accounts` walks. 1 = three codes, 2 = twelve.
+    /// How many levels of AI accounts `--ai-accounts` walks. 1 = three keys, 2 = twelve.
     pub ai_depth: u32,
 }
 
@@ -132,25 +132,25 @@ nmts-recovery — restore files uploaded with NMTS, without NMTS.
 
 USAGE
   nmts-recovery --map FILE --out DIR      restore, in the terminal
-  nmts-recovery --find --out DIR          restore with only your account code
+  nmts-recovery --find --out DIR          restore with only your NMTS key
   nmts-recovery --gui                     restore, from a page in your browser
   nmts-recovery --map FILE --list         show what a list covers and stop
-  nmts-recovery --derive                  show what your account code derives
+  nmts-recovery --derive                  show what your NMTS key derives
 
 WHAT IT NEEDS
-  Your account code, and your recovery list. The list is encrypted; the code opens
+  Your NMTS key, and your recovery list. The list is encrypted; the key opens
   it. You can hand over the file you saved from NMTS, or use --find and let this
   program look the list up on the storage network.
 
 WHAT GOES OUT
-  Your account code never goes out. Keys are derived from it here and it is not part
+  Your NMTS key never goes out. Keys are derived from it here and it is not part
   of any request this program makes.
   Every restore asks a public Walrus aggregator for blobs by their public ids.
   --print-fetch-plan prints those requests so you can make them yourself, and
   --blobs-dir then reads what you fetched, so the program opens no socket at all.
   --find asks a public Sui node which blobs a wallet owns, and the wallet address and
-  the name it looks for are BOTH derived from your account code. Neither server can
-  work back to the code, but asking tells them somebody is looking for this account's
+  the name it looks for are BOTH derived from your NMTS key. Neither server can
+  work back to the key, but asking tells them somebody is looking for this account's
   files, from this address, right now. --rpc names your own node; --map avoids it.
   A recovery list can name storage addresses of its own. Those are not contacted
   unless you ask, with --use-recorded-aggregators.
@@ -160,15 +160,15 @@ OPTIONS
                        (.txt), which has the list inside it. Required unless --find,
                        --gui or --derive.
   --find               look the recovery list up on the storage network using your
-                       account code alone — no saved file needed. Works when the
-                       account turned the storage-network copy on and paid with the
-                       wallet the account code derives.
+                       NMTS key alone — no saved file needed. Works when the account
+                       turned the storage-network copy on and paid with the wallet
+                       the NMTS key derives.
   --rpc URL            a Sui node for --find to ask. Repeatable; tried in order.
   --owner 0xADDRESS    with --find, the wallet that paid for the uploads. Needed only
                        when that wallet is a browser extension or an imported key,
-                       because the account code cannot derive such an address.
+                       because the NMTS key cannot derive such an address.
   --out DIR            where to write recovered files. Required when restoring.
-  --code-file FILE     read the account code from a file instead of typing it.
+  --code-file FILE     read your NMTS key from a file instead of typing it (same flag name).
   --aggregator URL     a Walrus aggregator to read from. Repeatable; tried in order.
   --use-recorded-aggregators
                        also read from the storage addresses written inside the
@@ -182,29 +182,29 @@ OPTIONS
   --list               print what the list covers and stop. No network.
   --print-fetch-plan   print the URLs to fetch by hand, and stop. No network.
   --gui                serve a control page on this machine and open it. The page
-                       cannot be reached from anywhere else, and your account code
-                       is still typed here in the terminal, never in the browser.
+                       cannot be reached from anywhere else, and your NMTS key is
+                       still typed here in the terminal, never in the browser.
   --port N             fixed port for --gui. Default: whatever is free.
   --no-open            with --gui, print the address instead of opening a browser.
   --write-gui FILE     write the control page out as a file and stop, so you can
                        read it. Opening that file on its own does nothing.
-  --derive             print what your account code derives — the account id, its
+  --derive             print what your NMTS key derives — the account id, its
                        fingerprint, your public code, and your wallet addresses.
                        No list, no network, nothing written.
   --wallets N          how many wallets --derive walks, and how many --find looks
                        under. Default: 1.
   --secrets            with --derive, also print the wallet private keys. Anyone
                        who reads them can spend from those wallets.
-  --ai-accounts        with --derive, also print the AI-account codes your code
-                       makes. Each one is a full account code: whoever reads it
-                       is that sub-account.
+  --ai-accounts        with --derive, also print the NMTS keys of the AI accounts
+                       your key makes. Each one is a full NMTS key: whoever reads
+                       it is that sub-account.
   --depth N            how many levels --ai-accounts walks. 1 (default) prints
-                       three codes; 2 prints those and the nine under them.
+                       three keys; 2 prints those and the nine under them.
   --lang en|ko         message language. Default: en.
   --help               this text.
   --version            version and license.
 
-THE ACCOUNT CODE IS NEVER AN ARGUMENT. It is typed when this program asks, or read
+THE NMTS KEY IS NEVER AN ARGUMENT. It is typed when this program asks, or read
 from --code-file. An argument would land in your shell history and be visible to every
 other user on the machine.
 ";
@@ -427,7 +427,7 @@ pub fn parse(argv: &[String]) -> Parsed {
             //    spelling of a flag that must never exist.
             "--code" | "--account-code" => {
                 return Parsed::Print(
-                    "The account code is not an argument: it would be written to your shell \
+                    "Your NMTS key is not an argument: it would be written to your shell \
                      history and visible to other users on this machine. Run without it and let \
                      this program ask for it, or use --code-file.\n"
                         .to_string(),
@@ -440,7 +440,7 @@ pub fn parse(argv: &[String]) -> Parsed {
     }
 
     // The GUI picks its list in the browser, writing the page out reads nothing, and deriving
-    // needs only the account code.
+    // needs only the NMTS key.
     let map_optional = matches!(a.mode, Mode::Gui | Mode::WriteGui | Mode::Derive) || a.find;
     if !map_seen && !map_optional {
         return Parsed::Print(
@@ -561,7 +561,7 @@ mod tests {
         }
     }
 
-    /// Deriving needs the account code and nothing else — no list, no network, no destination.
+    /// Deriving needs the NMTS key and nothing else — no list, no network, no destination.
     #[test]
     fn deriving_needs_no_map_and_no_destination() {
         match parse(&v(&["--derive"])) {
@@ -602,7 +602,7 @@ mod tests {
             );
         }
         match parse(&v(&["--derive"])) {
-            Parsed::Run(a) => assert!(!a.ai_accounts, "AI-account codes are not the default"),
+            Parsed::Run(a) => assert!(!a.ai_accounts, "AI accounts' keys are not the default"),
             Parsed::Print(msg, _) => panic!("--derive was refused: {msg}"),
         }
         match parse(&v(&["--derive", "--wallets", "5", "--secrets"])) {
@@ -681,9 +681,9 @@ mod tests {
     /// ⛔ EVERY PART OF THIS PROGRAM THAT OPENS A SOCKET IS NAMED IN THE HELP.
     ///
     /// The help used to end its "what it needs" paragraph with *"Neither is ever sent anywhere"*.
-    /// That sentence was true about the two things it named — the account code and the list — and
+    /// That sentence was true about the two things it named — the NMTS key and the list — and
     /// false about the impression it left, because `--find` asks a public Sui node a question
-    /// derived from the account code. A person deciding whether to type `--find` read the reassuring
+    /// derived from the NMTS key. A person deciding whether to type `--find` read the reassuring
     /// sentence and had nowhere else to look; the README's correcting paragraph is not in the
     /// terminal.
     ///

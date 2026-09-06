@@ -2,7 +2,7 @@
 //!
 //! # Why this is written out rather than imported
 //! A recovery tool's dependency list is something a person should be able to finish reading before
-//! they type an account code into it. A general HTTP server crate is tens of thousands of lines
+//! they type an NMTS key into it. A general HTTP server crate is tens of thousands of lines
 //! solving problems this program does not have: no virtual hosts, no TLS, no routing, no
 //! keep-alive, no compression, no uploads to disk, no concurrency beyond one browser tab. What is
 //! left is a request line, a handful of headers, and a body with a stated length — and that fits

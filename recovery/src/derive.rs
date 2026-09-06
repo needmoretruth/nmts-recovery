@@ -1,7 +1,7 @@
-//! Everything an account code turns into, printed on request.
+//! Everything an NMTS key turns into, printed on request.
 //!
 //! # Why this is in a recovery tool at all
-//! In NMTS an account code is not a password — it is the ROOT. Every key the account has is
+//! In NMTS the NMTS key is not a password — it is the ROOT. Every key the account has is
 //! computed from it: the identity the server knows it by, the key that opens the recovery list,
 //! the identity other people share files to, and the wallet that pays for storage. If NMTS is
 //! gone, "get my files back" is only half of what a person needs; the other half is "get my
@@ -35,7 +35,7 @@ const ED25519_FLAG: u8 = 0x00;
 /// The human-readable part of an exported Sui secret key.
 const SECRET_KEY_HRP: &str = "suiprivkey";
 
-/// One wallet the account code derives.
+/// One wallet the NMTS key derives.
 pub struct Wallet {
     pub index: u32,
     /// `0x…` Sui address.
@@ -44,23 +44,23 @@ pub struct Wallet {
     pub secret: Option<String>,
 }
 
-/// One AI account the code derives (NCF-3 §1.5).
+/// One AI account the NMTS key derives (NCF-3 §1.5).
 pub struct AiAccount {
     /// Where it sits in the tree: `2` is the second AI account, `2.3` the third one under it.
     pub path: String,
-    /// Its account code, in the display form a person types back in.
+    /// Its NMTS key, in the display form a person types back in.
     pub code: String,
 }
 
 /// How many AI accounts an account may have, at each level (product rule of 2026-09-06: three, and three under each).
 pub const AI_ACCOUNTS_PER_LEVEL: u32 = 3;
 
-/// Every AI-account code under `keys`, `depth` levels down (NCF-3 §1.5).
+/// Every AI account's NMTS key under `keys`, `depth` levels down (NCF-3 §1.5).
 ///
-/// ⛔ Why a recovery tool computes these. The codes are EXPANDED from the account above them, not
-/// drawn from randomness, so the top code is the only thing that has to survive — and this walk is
+/// ⛔ Why a recovery tool computes these. The keys are EXPANDED from the account above them, not
+/// drawn from randomness, so the top key is the only thing that has to survive — and this walk is
 /// what turns it back into the whole tree with no network and no NMTS. Each level costs one full
-/// Argon2id pass per account, because a child's own root comes from its own code like anybody's.
+/// Argon2id pass per account, because a child's own root comes from its own key like anybody's.
 pub fn ai_accounts(keys: &DerivedKeys, depth: u32) -> Result<Vec<AiAccount>, String> {
     let mut out = Vec::new();
     walk_ai(keys, "", depth, &mut out)?;
@@ -271,17 +271,17 @@ mod tests {
         let two = ai_accounts(&keys, 2).expect("depth 2");
         assert_eq!(two.len(), 12, "three, and three under each");
         assert_eq!(two[1].path, "1.1");
-        // Every code is a real, parseable account code, and no two of them are the same.
+        // Every code is a real, parseable NMTS key, and no two of them are the same.
         let mut seen = std::collections::BTreeSet::new();
         for a in &two {
-            nmts_crypto::codes::AccountCode::parse(&a.code).expect("an ordinary account code");
+            nmts_crypto::codes::AccountCode::parse(&a.code).expect("an ordinary NMTS key");
             assert!(seen.insert(a.code.clone()), "duplicate code at {}", a.path);
         }
         // Depth 0 is nothing, not an error — a caller asking for no levels gets no codes.
         assert!(ai_accounts(&keys, 0).expect("depth 0").is_empty());
     }
 
-    /// Two accounts share nothing. A derivation that lost the code somewhere would show up here as
+    /// Two accounts share nothing. A derivation that lost the key somewhere would show up here as
     /// two different codes producing one address.
     #[test]
     fn two_account_codes_derive_to_different_everything() {

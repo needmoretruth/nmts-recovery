@@ -6,7 +6,7 @@
 //! its own fixture, a change to how a list is written could be made in one and forgotten in the
 //! other, and the pair would go on passing while agreeing about nothing.
 //!
-//! Everything here is real: a real account code, real NCF-3 streams under real per-file keys, and
+//! Everything here is real: a real NMTS key, real NCF-3 streams under real per-file keys, and
 //! a real sealed list, all produced by the same crate the browser compiles to WASM.
 
 // Each integration test binary compiles this module separately, so whichever one does not call a
@@ -192,7 +192,7 @@ impl Fixture {
         fs::write(self.path("map.nmtsmap"), doc).expect("list file");
     }
 
-    /// Write a recovery KIT beside the list: the same sealed document, plus the account code, in
+    /// Write a recovery KIT beside the list: the same sealed document, plus the NMTS key, in
     /// the one-file form the product now hands people.
     ///
     /// ⛔ Built here as TEXT rather than by calling the browser's builder, because the thing under
@@ -205,7 +205,7 @@ impl Fixture {
         let kit = format!(
             "# NMTS Recovery Kit\nCreated: 2026-08-17T09:00:00Z\n\n\
              Anyone who holds this file holds this account.\n\n\
-             Account code:\n    {}\n\n\
+             NMTS key:\n    {}\n\n\
              --- BEGIN NMTS RECOVERY KIT DATA ---\n\
              {{\"format\":\"nmts-recovery-kit\",\"version\":2,\
                \"generated_at\":\"2026-08-17T09:00:00Z\",\"account_id\":\"{}\",\

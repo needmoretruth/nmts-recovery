@@ -7,7 +7,7 @@
 //! built binary's path in `CARGO_BIN_EXE_nmts-recovery`, so no path is guessed here.
 //!
 //! # What is synthesised
-//! A real account code, real NCF-3 streams under real per-file keys, and a real sealed list. The
+//! A real NMTS key, real NCF-3 streams under real per-file keys, and a real sealed list. The
 //! bytes these tests feed the tool are produced by the same crate the browser compiles to WASM,
 //! so a change that made the browser and the tool disagree fails here rather than in someone's
 //! recovery.
@@ -25,7 +25,7 @@ fn restored(fx: &Fixture, rel: &str) -> Vec<u8> {
     fs::read(fx.path("out").join(rel)).unwrap_or_else(|e| panic!("{rel} was not restored: {e}"))
 }
 
-/// The claim, tested: an account code plus a list plus the stored bytes gives the files back.
+/// The claim, tested: an NMTS key plus a list plus the stored bytes gives the files back.
 #[test]
 fn a_code_and_a_map_give_the_files_back() {
     let fx = Fixture::new();
@@ -415,8 +415,8 @@ fn an_escaped_folder_name_stays_one_folder() {
 // --- the recovery kit: one file with everything in it -------------------------------------------
 
 /// ⭐ The kit is the shape the product hands people when they want one file rather than two: the
-///    account code and the recovery list together. This program has to accept it, take the list out
-///    of it, and NOT ask for a code that is printed in the file it was just given.
+///    NMTS key and the recovery list together. This program has to accept it, take the list out
+///    of it, and NOT ask for a key that is printed in the file it was just given.
 #[test]
 fn a_recovery_kit_alone_gives_the_files_back() {
     let fx = Fixture::new();
@@ -440,16 +440,16 @@ fn a_recovery_kit_alone_gives_the_files_back() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(said.contains("recovery list is inside it"), "{said}");
-    // ⛔ And it says so out loud. Using a code without asking is right here; doing it quietly is not.
+    // ⛔ And it says so out loud. Using a key without asking is right here; doing it quietly is not.
     assert!(
-        said.contains("carries your account code in the clear"),
+        said.contains("carries your NMTS key in the clear"),
         "{said}"
     );
     assert_eq!(restored(&fx, "docs/kit.txt.restored"), text);
 }
 
 /// A kit for one account holding a list for another was assembled by hand. Say so before the
-/// account code goes anywhere near it.
+/// NMTS key goes anywhere near it.
 #[test]
 fn a_kit_and_a_list_that_disagree_about_the_account_are_refused() {
     let fx = Fixture::new();
@@ -644,7 +644,7 @@ fn the_list_says_who_wrote_it_and_which_chain_it_belongs_to() {
 
 /// ⛔ A STORAGE ADDRESS THE LIST NAMES IS NOT CONTACTED, AND THE RUN SAYS SO.
 ///
-/// The document is sealed, but a recovery kit carries the account code, so a kit somebody hands you
+/// The document is sealed, but a recovery kit carries the NMTS key, so a kit somebody hands you
 /// was sealed by them and every field in it is theirs — this list of hosts included. Contacting one
 /// is a beacon: it tells that host's operator the address the recovery ran from and the moment it
 /// ran. So the address is printed, named as not contacted, together with the switch that uses it.

@@ -1,10 +1,13 @@
 # nmts-recovery
 
-Get your files back from Walrus storage **without NMTS**, using your account code and the
+Get your files back from Walrus storage **without NMTS**, using your NMTS key and the
 recovery list you saved.
 
+Your **NMTS key** is what NMTS used to call your account code. Only the name changed: the flag
+names, the file formats and the derivation are the same.
+
 [NMTS](https://nmts.me) is end-to-end encrypted file storage built on Walrus: every file is
-encrypted in your browser before it is uploaded, and every key comes from an account code that
+encrypted in your browser before it is uploaded, and every key comes from the NMTS key, which
 never leaves your device. This program is the other half of that promise. If NMTS disappears, your
 files must still be recoverable, and you should not have to take anyone's word for it.
 
@@ -26,21 +29,21 @@ arbitrate it.
 
 Either of these:
 
-- **Your recovery kit** (`nmts-recovery-kit-….txt`): one file holding your account code and the
+- **Your recovery kit** (`nmts-recovery-kit-….txt`): one file holding your NMTS key and the
   recovery list. Hand this program that file and it needs nothing else. Which is also why anyone
   who takes that file takes your account.
-- **Your recovery list** (`.nmtsmap`) **and your account code.** The list is encrypted and the
-  code opens it, so keeping them apart is what makes losing one of them survivable.
+- **Your recovery list** (`.nmtsmap`) **and your NMTS key.** The list is encrypted and the
+  key opens it, so keeping them apart is what makes losing one of them survivable.
 
-Neither the code nor the list is ever sent anywhere. Things derived from your code do go out when
+Neither the key nor the list is ever sent anywhere. Things derived from your key do go out when
 you use `--find`; see [What it does over the network](#what-it-does-over-the-network).
 
 ## What it cannot do
 
 - **Find your files without the recovery list.** The list is the index: it holds each file's key
   and where its pieces are stored. Blob addresses on Walrus derive from content, so nothing
-  computes them from an account code alone. If the account switched the storage-network copy on,
-  `--find` can look a copy up from your account code; otherwise save the file while you can.
+  computes them from an NMTS key alone. If the account switched the storage-network copy on,
+  `--find` can look a copy up from your NMTS key; otherwise save the file while you can.
 - **Recover anything you deleted.** Deleting a file in NMTS destroys its key, and the key is what
   this program needs.
 - **Prove a blob is still stored.** It finds out by fetching it.
@@ -75,7 +78,7 @@ It runs natively on Linux, macOS and Windows.
 nmts-recovery --map ~/Downloads/nmts-recovery-map.nmtsmap --out ~/recovered
 ```
 
-It asks for your account code, shows what the recovery list covers, then fetches, decrypts,
+It asks for your NMTS key, shows what the recovery list covers, then fetches, decrypts,
 verifies and writes each file. Before committing to anything:
 
 ```sh
@@ -90,43 +93,43 @@ after the bytes arrive is identical.
 | Option | |
 |---|---|
 | `--map FILE` | your recovery list (`.nmtsmap`) **or** your recovery kit (`.txt`). Required unless `--find`, `--gui` or `--derive`. |
-| `--find` | look the list up on Walrus from your account code alone. See below. |
+| `--find` | look the list up on Walrus from your NMTS key alone. See below. |
 | `--rpc URL` | a Sui node for `--find` to ask. Repeatable; tried in order. |
 | `--owner 0xADDRESS` | with `--find`, the wallet that paid for the uploads. Needed only when that wallet is a browser extension or an imported key. |
 | `--out DIR` | where to write recovered files. Required when restoring. |
-| `--code-file FILE` | read the account code from a file instead of typing it. |
+| `--code-file FILE` | read your NMTS key from a file instead of typing it. The flag keeps its name. |
 | `--aggregator URL` | a Walrus aggregator to read from. Repeatable; tried in order. |
 | `--use-recorded-aggregators` | also read from the storage addresses written inside the list. Off by default. |
 | `--blobs-dir DIR` | read blobs from a directory instead of the network. |
 | `--only TEXT` | restore only files whose path or name contains TEXT. |
 | `--overwrite` | replace files that already exist. Off by default. |
-| `--derive` | print what your account code derives, and stop. No list, no network. |
+| `--derive` | print what your NMTS key derives, and stop. No list, no network. |
 | `--wallets N` | how many wallets `--derive` walks, and how many `--find` looks under. Default: 1. |
 | `--secrets` | with `--derive`, also print the wallet private keys. |
 | `--lang en\|ko` | message language. English by default; nothing is auto-detected. |
 
-**The account code is never an argument.** It is typed when the program asks, or read from
+**The NMTS key is never an argument.** It is typed when the program asks, or read from
 `--code-file`. An argument would land in your shell history and be visible to other users.
 
 ## When you have no list file
 
 If the account switched the storage-network copy on, a copy of the recovery list is on Walrus and
-your account code is enough to find it:
+your NMTS key is enough to find it:
 
 ```sh
 nmts-recovery --find --out ~/recovered
 ```
 
-Two things are predictable from the account code: the wallet that paid for the storage, and the
+Two things are predictable from the NMTS key: the wallet that paid for the storage, and the
 name the list is stored under. So this derives the address, asks a public Sui node which blob
 objects that wallet owns, asks an aggregator for a patch by that name, and opens what comes back.
 A Sui node learns that somebody is interested in that address, and an aggregator learns that
-somebody asked for those patches; neither is given your account code.
+somebody asked for those patches; neither is given your NMTS key.
 
 Tell it `--owner 0xADDRESS` if the uploads were paid for with a browser-extension or imported
 wallet, and `--wallets N` if the account used more than the first derived wallet. Finding nothing
 is an answer, and there are three ordinary reasons for it: the copy was never switched on, the
-wallet that paid is not one this code derives, or the account uploaded only large files, which are
+wallet that paid is not one this key derives, or the account uploaded only large files, which are
 stored as blobs of their own rather than inside the quilt that carries the list. Use your
 `.nmtsmap` file in those cases.
 
@@ -141,13 +144,13 @@ see what it holds, tick what you want, say where it goes, and watch it happen. T
 list and sends back which rows you ticked; every key, every fetch, every decryption and every file
 written happens in the Rust binary. The browser holds no key and writes nothing.
 
-**Your account code is typed in the terminal, never in the browser.** A browser is the largest
+**Your NMTS key is typed in the terminal, never in the browser.** A browser is the largest
 attack surface on a personal machine: extensions read page contents, password managers remember
 anything that looks like a credential, form values outlive the tab. So the program asks for the
-code in the terminal it was started from, and the page tells you to look there. The page refuses
-to read a file that is not a recovery list, which is how a **kit** (list and code in one file) is
+key in the terminal it was started from, and the page tells you to look there. The page refuses
+to read a file that is not a recovery list, which is how a **kit** (list and key in one file) is
 kept out of the browser: if you saved only a kit, the page gives you the terminal command instead.
-No route in the control channel takes an account code, and a test asserts it.
+No route in the control channel takes an NMTS key, and a test asserts it.
 
 Why a page served on your own machine can be trusted:
 
@@ -167,7 +170,7 @@ opening that copy on its own does nothing, on purpose.
 
 ## Getting your wallet back too
 
-Every key the account has is computed from the account code, including the wallet that pays for
+Every key the account has is computed from the NMTS key, including the wallet that pays for
 storage. Nothing else can do that computation for you.
 
 ```sh
@@ -180,7 +183,7 @@ The derivation is checked against fixtures taken from the library NMTS itself us
 
 ## What it does over the network
 
-**Your account code never goes out.** Keys are derived from it locally and it is part of no
+**Your NMTS key never goes out.** Keys are derived from it locally and it is part of no
 request. What is sent:
 
 ```
@@ -191,9 +194,9 @@ GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<derived patch id>      --fi
 ```
 
 Public blobs, by their public ids; every response is bounded to the ciphertext length the list
-states. The two `--find` requests are derived from your account code, so they tell a stranger's
+states. The two `--find` requests are derived from your NMTS key, so they tell a stranger's
 server that somebody is looking for this account's files, at this moment, from this address. The
-code itself is not sent and cannot be worked back to. `--rpc` names your own node; `--map FILE`
+key itself is not sent and cannot be worked back to. `--rpc` names your own node; `--map FILE`
 avoids the lookup entirely. Addresses recorded inside a list are not contacted unless you ask with
 `--use-recorded-aggregators`.
 
@@ -222,7 +225,7 @@ Exit codes: `0` everything restored · `1` it could not start · `2` the argumen
 
 ## Reporting a problem
 
-Open an issue, or write to nmts@nmts.me. **Do not include your account code** in a bug report, an
+Open an issue, or write to nmts@nmts.me. **Do not include your NMTS key** in a bug report, an
 issue, or a screenshot: nobody needs it to help you, and anyone who has it has your files.
 
 ## Built on this?

@@ -4,7 +4,7 @@
 //! checks but not the part nobody can synthesise: that the URLs this program builds are the URLs a
 //! real Walrus aggregator answers. This test stores a real blob on Walrus **testnet** through the
 //! public publisher (Mysten-sponsored — no wallet, no coins, nothing spent), then recovers it with
-//! nothing but an account code, a list file, and a public aggregator.
+//! nothing but an NMTS key, a list file, and a public aggregator.
 //!
 //! # Running it
 //! ```text
