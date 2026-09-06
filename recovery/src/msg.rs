@@ -377,6 +377,25 @@ pub const DERIVE_SECRET_WARNING: Line = Line(
      창의 기록에 남으니, 끝나면 창을 닫으시고 어디에도 붙여 넣지 마십시오.",
 );
 
+pub const DERIVE_AI_HEAD: Line = Line(
+    "AI accounts this code makes:",
+    "이 코드에서 나오는 AI 계정:",
+);
+
+pub const DERIVE_AI_WARNING: Line = Line(
+    "⛔ ACCOUNT CODES FOLLOW. Each line is a full account code for a sub-account — whoever reads \
+     one is that sub-account, and can read everything stored under it. They are about to be in \
+     this terminal's history. The code above them cannot be worked out from any of them.",
+    "⛔ 아래는 계정 코드입니다. 한 줄이 하위 계정 하나의 계정 코드이고, 이것을 읽는 사람은 그 \
+     계정이 되어 그 안의 모든 것을 볼 수 있습니다. 지금부터 이 창의 기록에 남습니다. 다만 이 \
+     코드들로 위의 계정 코드를 알아낼 수는 없습니다.",
+);
+
+pub const DERIVE_AI_HINT: Line = Line(
+    "Add --ai-accounts to also print the AI-account codes this code makes.",
+    "이 코드에서 나오는 AI 계정 코드까지 보시려면 --ai-accounts 를 붙이십시오.",
+);
+
 pub const DERIVE_NOTHING_ELSE: Line = Line(
     "Nothing was written and nothing was sent. This is the same derivation your browser does.",
     "아무것도 저장하지 않았고 어디로도 보내지 않았습니다. 브라우저가 하는 것과 같은 계산입니다.",
@@ -449,6 +468,9 @@ pub const ALL_LINES: &[Line] = &[
     DERIVE_SECRET_KEY,
     DERIVE_PUBLIC_ONLY,
     DERIVE_SECRET_WARNING,
+    DERIVE_AI_HEAD,
+    DERIVE_AI_WARNING,
+    DERIVE_AI_HINT,
     DERIVE_NOTHING_ELSE,
 ];
 

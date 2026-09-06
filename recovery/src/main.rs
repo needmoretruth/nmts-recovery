@@ -157,6 +157,16 @@ fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
     } else {
         println!("\n{}", msg::DERIVE_PUBLIC_ONLY.get(lang));
     }
+    if a.ai_accounts {
+        // ⛔ The warning comes BEFORE the codes, for the reason the private keys' does.
+        println!("\n{}", msg::DERIVE_AI_WARNING.get(lang));
+        println!("\n{}", msg::DERIVE_AI_HEAD.get(lang));
+        for account in derive::ai_accounts(&keys, a.ai_depth)? {
+            println!("  {:<16} {}", account.path, account.code);
+        }
+    } else {
+        println!("{}", msg::DERIVE_AI_HINT.get(lang));
+    }
     println!("{}", msg::DERIVE_NOTHING_ELSE.get(lang));
     Ok(ExitCode::SUCCESS)
 }

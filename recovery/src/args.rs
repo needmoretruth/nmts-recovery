@@ -98,6 +98,10 @@ pub struct Args {
     pub wallets: u32,
     /// Whether [`Mode::Derive`] also prints private keys.
     pub secrets: bool,
+    /// Whether [`Mode::Derive`] also prints the AI-account codes (NCF-3 §1.5).
+    pub ai_accounts: bool,
+    /// How many levels of AI accounts `--ai-accounts` walks. 1 = three codes, 2 = twelve.
+    pub ai_depth: u32,
 }
 
 /// Parsing outcome: either arguments, or text to print and an exit code.
@@ -115,6 +119,13 @@ const DEFAULT_WALLETS: u32 = 1;
 /// A ceiling on `--wallets`. Each one costs a key derivation, and a number past this is a typo
 /// rather than a request.
 const MAX_WALLETS: u32 = 100;
+
+/// Levels of AI accounts walked when `--ai-accounts` names no depth.
+const DEFAULT_AI_DEPTH: u32 = 1;
+
+/// A ceiling on `--depth`. Two is the whole tree the product can create (product rule of 2026-09-06: three accounts,
+/// and three under each). Deeper costs a full Argon2id pass per account for codes nothing made.
+const MAX_AI_DEPTH: u32 = 2;
 
 const USAGE: &str = "\
 nmts-recovery — restore files uploaded with NMTS, without NMTS.
@@ -184,6 +195,11 @@ OPTIONS
                        under. Default: 1.
   --secrets            with --derive, also print the wallet private keys. Anyone
                        who reads them can spend from those wallets.
+  --ai-accounts        with --derive, also print the AI-account codes your code
+                       makes. Each one is a full account code: whoever reads it
+                       is that sub-account.
+  --depth N            how many levels --ai-accounts walks. 1 (default) prints
+                       three codes; 2 prints those and the nine under them.
   --lang en|ko         message language. Default: en.
   --help               this text.
   --version            version and license.
@@ -214,6 +230,8 @@ pub fn parse(argv: &[String]) -> Parsed {
         gui_out: None,
         wallets: DEFAULT_WALLETS,
         secrets: false,
+        ai_accounts: false,
+        ai_depth: DEFAULT_AI_DEPTH,
     };
     let mut map_seen = false;
 
@@ -264,6 +282,25 @@ pub fn parse(argv: &[String]) -> Parsed {
                 a.find = true;
                 1
             }
+            "--ai-accounts" => {
+                a.ai_accounts = true;
+                1
+            }
+            "--depth" => match value("--depth") {
+                Ok(v) => match v.parse::<u32>() {
+                    Ok(n) if (1..=MAX_AI_DEPTH).contains(&n) => {
+                        a.ai_depth = n;
+                        2
+                    }
+                    _ => {
+                        return Parsed::Print(
+                            format!("--depth takes a number from 1 to {MAX_AI_DEPTH}."),
+                            2,
+                        )
+                    }
+                },
+                Err(e) => return Parsed::Print(e, 2),
+            },
             "--secrets" => {
                 a.secrets = true;
                 1
@@ -547,6 +584,26 @@ mod tests {
                 ),
                 "--wallets {bad} was accepted"
             );
+        }
+        match parse(&v(&["--derive", "--ai-accounts", "--depth", "2"])) {
+            Parsed::Run(a) => {
+                assert!(a.ai_accounts);
+                assert_eq!(a.ai_depth, 2);
+            }
+            Parsed::Print(msg, _) => panic!("--ai-accounts was refused: {msg}"),
+        }
+        for bad in ["0", "3", "no"] {
+            assert!(
+                matches!(
+                    parse(&v(&["--derive", "--ai-accounts", "--depth", bad])),
+                    Parsed::Print(_, 2)
+                ),
+                "--depth {bad} was accepted"
+            );
+        }
+        match parse(&v(&["--derive"])) {
+            Parsed::Run(a) => assert!(!a.ai_accounts, "AI-account codes are not the default"),
+            Parsed::Print(msg, _) => panic!("--derive was refused: {msg}"),
         }
         match parse(&v(&["--derive", "--wallets", "5", "--secrets"])) {
             Parsed::Run(a) => {

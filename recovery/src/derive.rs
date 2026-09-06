@@ -44,6 +44,57 @@ pub struct Wallet {
     pub secret: Option<String>,
 }
 
+/// One AI account the code derives (NCF-3 §1.5).
+pub struct AiAccount {
+    /// Where it sits in the tree: `2` is the second AI account, `2.3` the third one under it.
+    pub path: String,
+    /// Its account code, in the display form a person types back in.
+    pub code: String,
+}
+
+/// How many AI accounts an account may have, at each level (product rule of 2026-09-06: three, and three under each).
+pub const AI_ACCOUNTS_PER_LEVEL: u32 = 3;
+
+/// Every AI-account code under `keys`, `depth` levels down (NCF-3 §1.5).
+///
+/// ⛔ Why a recovery tool computes these. The codes are EXPANDED from the account above them, not
+/// drawn from randomness, so the top code is the only thing that has to survive — and this walk is
+/// what turns it back into the whole tree with no network and no NMTS. Each level costs one full
+/// Argon2id pass per account, because a child's own root comes from its own code like anybody's.
+pub fn ai_accounts(keys: &DerivedKeys, depth: u32) -> Result<Vec<AiAccount>, String> {
+    let mut out = Vec::new();
+    walk_ai(keys, "", depth, &mut out)?;
+    Ok(out)
+}
+
+fn walk_ai(
+    keys: &DerivedKeys,
+    prefix: &str,
+    remaining: u32,
+    out: &mut Vec<AiAccount>,
+) -> Result<(), String> {
+    if remaining == 0 {
+        return Ok(());
+    }
+    for n in 1..=AI_ACCOUNTS_PER_LEVEL {
+        let code = keys.ai_account_code_for(n).map_err(|e| format!("{e}"))?;
+        let path = if prefix.is_empty() {
+            n.to_string()
+        } else {
+            format!("{prefix}.{n}")
+        };
+        out.push(AiAccount {
+            path: path.clone(),
+            code: code.display(),
+        });
+        if remaining > 1 {
+            let child = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
+            walk_ai(&child, &path, remaining - 1, out)?;
+        }
+    }
+    Ok(())
+}
+
 /// Everything derived, ready to print.
 pub struct Derived {
     /// base64url of 16 bytes — what the server knows this account by. Public.
@@ -205,6 +256,29 @@ mod tests {
                 .map(|w| w.address.clone())
                 .collect::<Vec<_>>(),
         );
+    }
+
+    /// The tree is three wide, and `--depth 2` is three plus nine. Paths say where each one sits.
+    #[test]
+    fn the_ai_account_tree_is_three_wide_and_nests() {
+        let keys = nmts_crypto::kdf::derive(&nmts_crypto::codes::AccountCode::generate()).unwrap();
+        let one = ai_accounts(&keys, 1).expect("depth 1");
+        assert_eq!(one.len(), 3);
+        assert_eq!(
+            one.iter().map(|a| a.path.as_str()).collect::<Vec<_>>(),
+            ["1", "2", "3"]
+        );
+        let two = ai_accounts(&keys, 2).expect("depth 2");
+        assert_eq!(two.len(), 12, "three, and three under each");
+        assert_eq!(two[1].path, "1.1");
+        // Every code is a real, parseable account code, and no two of them are the same.
+        let mut seen = std::collections::BTreeSet::new();
+        for a in &two {
+            nmts_crypto::codes::AccountCode::parse(&a.code).expect("an ordinary account code");
+            assert!(seen.insert(a.code.clone()), "duplicate code at {}", a.path);
+        }
+        // Depth 0 is nothing, not an error — a caller asking for no levels gets no codes.
+        assert!(ai_accounts(&keys, 0).expect("depth 0").is_empty());
     }
 
     /// Two accounts share nothing. A derivation that lost the code somewhere would show up here as
