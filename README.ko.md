@@ -3,7 +3,8 @@
 *[English](README.md)*
 
 **NMTS 없이** Walrus 저장소에서 파일을 되찾는 프로그램입니다. NMTS 키와 저장해 둔 복구 목록만
-있으면 됩니다.
+있으면 됩니다. NMTS는 **NeedMoreTruthStorage**의 줄임말로, 개발자 한 사람([needmoretruth](https://github.com/needmoretruth))이
+만든 Walrus 네트워크 위의 종단간 암호화 클라우드 스토리지이고, 사이트는 **https://nmts.me** 입니다.
 
 **NMTS 키**는 NMTS가 예전에 「계정 코드」라고 부르던 것입니다. 이름만 바뀌었고 플래그 이름·파일
 형식·파생은 그대로입니다.

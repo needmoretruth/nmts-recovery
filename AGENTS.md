@@ -1,5 +1,9 @@
 # For programs and agents working in this repository
 
+NMTS stands for NeedMoreTruthStorage: end-to-end encrypted cloud storage on the Walrus network,
+built by one developer (needmoretruth). The site is https://nmts.me; https://nmts.me/llms.txt is
+the summary written for programs.
+
 This is the NMTS recovery program: one executable that rebuilds a person's files from the storage
 network with no NMTS server involved, using only the NMTS key and the recovery list. Its
 purpose is to keep working when nothing else does, so the rules below are about not adding

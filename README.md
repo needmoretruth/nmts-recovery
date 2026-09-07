@@ -1,7 +1,9 @@
 # nmts-recovery
 
 Get your files back from Walrus storage **without NMTS**, using your NMTS key and the
-recovery list you saved.
+recovery list you saved. NMTS is **NeedMoreTruthStorage** — end-to-end encrypted cloud storage on
+the Walrus network, built by one developer ([needmoretruth](https://github.com/needmoretruth)); the
+site is **https://nmts.me**.
 
 Your **NMTS key** is what NMTS used to call your account code. Only the name changed: the flag
 names, the file formats and the derivation are the same.
@@ -25,7 +27,7 @@ browser code compiles to WebAssembly. The format is NCF-3, documented in
 [nmts-crypto](https://github.com/needmoretruth/nmts-crypto) with the conformance vectors that
 arbitrate it.
 
-## What you need
+## 🧾 What you need
 
 Either of these:
 
@@ -38,7 +40,7 @@ Either of these:
 Neither the key nor the list is ever sent anywhere. Things derived from your key do go out when
 you use `--find`; see [What it does over the network](#what-it-does-over-the-network).
 
-## What it cannot do
+## 🚫 What it cannot do
 
 - **Find your files without the recovery list.** The list is the index: it holds each file's key
   and where its pieces are stored. Blob addresses on Walrus derive from content, so nothing
@@ -58,7 +60,7 @@ you use `--find`; see [What it does over the network](#what-it-does-over-the-net
   and says so rather than guessing at bytes. `nmts-recovery --version` prints the newest list
   version it reads.
 
-## Get it
+## 📦 Get it
 
 The `nmts` command-line tool fetches the release for your machine and checks it against the
 release's checksum file: `nmts recovery --out ~/tools`. Or build it yourself with Rust 1.75 or
@@ -72,7 +74,7 @@ cargo test                # restores real files from synthesised storage, no net
 
 It runs natively on Linux, macOS and Windows.
 
-## Run it from the terminal
+## 🖥️ Run it from the terminal
 
 ```sh
 nmts-recovery --map ~/Downloads/nmts-recovery-map.nmtsmap --out ~/recovered
@@ -133,7 +135,7 @@ wallet that paid is not one this key derives, or the account uploaded only large
 stored as blobs of their own rather than inside the quilt that carries the list. Use your
 `.nmtsmap` file in those cases.
 
-## Run it from a browser instead
+## 🌐 Run it from a browser instead
 
 ```sh
 nmts-recovery --gui
@@ -223,7 +225,7 @@ is ever printed as somewhere to download software.
 Exit codes: `0` everything restored · `1` it could not start · `2` the arguments were wrong ·
 `3` finished with failures.
 
-## Reporting a problem
+## 🐛 Reporting a problem
 
 Open an issue, or write to nmts@nmts.me. **Do not include your NMTS key** in a bug report, an
 issue, or a screenshot: nobody needs it to help you, and anyone who has it has your files.
@@ -237,7 +239,7 @@ it listed, say so: [SHOWCASE.md](SHOWCASE.md) carries a link and up to ten lines
 project, in English ([SHOWCASE.ko.md](SHOWCASE.ko.md) in Korean), written by the people who made it. A listing is not an
 endorsement, and we may decline or remove one without giving a reason.
 
-## Licence
+## 📄 Licence
 
 Apache-2.0 — see [LICENSE](LICENSE). It moved here from AGPL-3.0-only on 2026-08-30; copies
 already held under the AGPL stay under it. If you need different terms, write to **nmts@nmts.me**
