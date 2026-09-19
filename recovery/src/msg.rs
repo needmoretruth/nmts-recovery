@@ -83,21 +83,21 @@ pub const MAP_NEEDS_VERSION: Line = Line(
     "This list needs nmts-recovery {need} or newer; this is {have}. Newer builds are at \
      https://github.com/needmoretruth/nmts-recovery — nothing was read.",
     "이 복구 목록에는 nmts-recovery {need} 이상이 필요합니다. 지금 쓰고 계신 것은 {have}입니다. \
-     새 판은 https://github.com/needmoretruth/nmts-recovery 에 있습니다. 아무것도 읽지 않았습니다.",
+     새 버전은 https://github.com/needmoretruth/nmts-recovery 에 있습니다. 아무것도 읽지 않았습니다.",
 );
 
 pub const MAP_TOO_NEW: Line = Line(
     "This list was written in a newer format than this build understands. Use a newer \
      nmts-recovery; nothing was read.",
-    "이 복구 목록은 이 판이 아는 것보다 새로운 형식으로 쓰였습니다. 더 새로운 nmts-recovery를 \
+    "이 복구 목록은 이 버전이 아는 것보다 새로운 형식으로 쓰였습니다. 더 새로운 nmts-recovery를 \
      쓰십시오. 아무것도 읽지 않았습니다.",
 );
 
 pub const MAP_SEQ_DISAGREES: Line = Line(
     "This file's header and the sealed list inside it disagree about which list this is. The \
      sealed one was used; the header is the part anyone holding the file could have edited",
-    "이 파일의 겉면과 그 안에 봉인된 목록이 서로 다른 번호를 말합니다. 봉인된 쪽을 썼습니다. \
-     겉면은 파일을 가진 사람이면 누구나 고칠 수 있는 자리입니다",
+    "이 파일의 헤더와 그 안에 봉인된 목록이 서로 다른 번호를 말합니다. 봉인된 쪽을 썼습니다. \
+     헤더는 파일을 가진 사람이면 누구나 고칠 수 있는 부분입니다",
 );
 
 pub const SUMMARY_HEAD: Line = Line("This list covers:", "이 복구 목록이 담고 있는 것:");
@@ -123,7 +123,7 @@ pub const LIST_SPEC: Line = Line("Format: {url}", "형식 설명: {url}");
 pub const LIST_TOTALS_DISAGREE: Line = Line(
     "⚠ This list says it holds {claimed} files; {parsed} were read. Some records were not \
      understood by this build — a newer nmts-recovery may read them.",
-    "⚠ 이 목록은 파일 {claimed}개를 담았다고 적고 있는데 읽어낸 것은 {parsed}개입니다. 이 판이 \
+    "⚠ 이 목록은 파일 {claimed}개를 담았다고 적고 있는데 읽어낸 것은 {parsed}개입니다. 이 버전이 \
      이해하지 못한 기록이 있습니다. 더 새로운 nmts-recovery라면 읽을 수 있습니다.",
 );
 
@@ -147,7 +147,7 @@ pub const RECORDED_HELD_BACK: Line = Line(
     "This list also names storage addresses of its own. They were NOT contacted: whoever sealed \
      the list chose them, and contacting one tells its operator where and when you recovered. Add \
      --use-recorded-aggregators to use them too.\n{list}",
-    "이 복구 목록에는 자체 저장망 주소도 적혀 있습니다. 접속하지 않았습니다. 그 주소는 목록을 \
+    "이 복구 목록에는 자체 Walrus 읽기 주소도 적혀 있습니다. 접속하지 않았습니다. 그 주소는 목록을 \
      봉인한 사람이 적은 것이고, 접속하면 그 주소의 운영자에게 복구한 위치와 시각이 알려집니다. \
      함께 쓰려면 --use-recorded-aggregators 를 붙이십시오.\n{list}",
 );
@@ -156,7 +156,7 @@ pub const RECORDED_HELD_BACK: Line = Line(
 pub const RECORDED_HELD_BACK_HINT: Line = Line(
     "Some parts did not arrive. This list names storage addresses this run did not contact — \
      --use-recorded-aggregators tries those too.",
-    "받지 못한 조각이 있습니다. 이 복구 목록에는 이번에 접속하지 않은 저장망 주소가 적혀 \
+    "받지 못한 조각이 있습니다. 이 복구 목록에는 이번에 접속하지 않은 Walrus 읽기 주소가 적혀 \
      있습니다. --use-recorded-aggregators 를 붙이면 그 주소도 시도합니다.",
 );
 
@@ -188,7 +188,7 @@ pub const NO_HASH_NOTE: Line = Line(
 
 pub const UNKNOWN_NETWORK: Line = Line(
     "is stored on a network this build cannot read",
-    "이 판이 읽을 수 없는 저장망에 있습니다",
+    "이 버전이 읽을 수 없는 네트워크에 있습니다",
 );
 
 // ── Looking the list up on the storage network ───────────────────────────────────────────────
@@ -196,41 +196,41 @@ pub const UNKNOWN_NETWORK: Line = Line(
 pub const FIND_LOOKING: Line = Line(
     "Looking for your recovery list on the storage network. Your NMTS key stays here; what \
      goes out is a question about these public addresses:",
-    "저장망에서 복구 목록을 찾고 있습니다. NMTS 키는 이 기계 밖으로 나가지 않고, 밖으로 나가는 \
+    "Walrus에서 복구 목록을 찾고 있습니다. NMTS 키는 이 기계 밖으로 나가지 않고, 밖으로 나가는 \
      것은 아래 공개 주소에 대한 물음뿐입니다:",
 );
 
-pub const FIND_FOUND: Line = Line("Found it in bundle", "찾았습니다 — 꾸러미");
+pub const FIND_FOUND: Line = Line("Found it in bundle", "찾았습니다. 묶음");
 
 pub const FIND_SEQ: Line = Line("list number", "목록 번호");
 
 pub const FIND_UNDER: Line = Line("held by", "가진 주소");
 
-pub const FIND_BUNDLES_SEEN: Line = Line("bundles were checked", "개의 꾸러미를 확인했습니다");
+pub const FIND_BUNDLES_SEEN: Line = Line("bundles were checked", "개의 묶음을 확인했습니다");
 
 pub const FIND_NOTHING: Line = Line(
-    "No recovery list was found on the storage network for this NMTS key. Three things make \
-     that normal rather than alarming: the account may never have turned the storage-network copy \
-     on; the uploads may have been paid for by a browser-extension wallet or an imported key, \
-     whose address an NMTS key cannot derive — pass it with --owner; or the account may hold \
-     only large files, which are stored on their own rather than in bundles. A recovery list file \
-     you saved, or a recovery kit, still works: pass it with --map.",
-    "이 NMTS 키로는 저장망에서 복구 목록을 찾지 못했습니다. 놀랄 일이 아닌 경우가 셋입니다. \
-     저장망 사본을 켠 적이 없거나, 확장 프로그램 지갑이나 가져온 개인 키로 저장 비용을 냈거나 \
-     (그 주소는 NMTS 키로 계산할 수 없습니다 — --owner 로 알려 주십시오), 큰 파일만 있어서 \
-     꾸러미가 아니라 따로 올라가 있는 경우입니다. 저장해 두신 복구 목록 파일이나 복구 키트가 \
+    "No recovery list was found on the storage network for this NMTS key. That happens when \
+     the account never turned the storage-network copy on; when the uploads were paid for by a \
+     browser-extension wallet or an imported key, whose address an NMTS key cannot derive — pass \
+     it with --owner; or when the account holds only large files, which are stored on their own \
+     rather than in bundles. A recovery list file you saved, or a recovery kit, still works: \
+     pass it with --map.",
+    "이 NMTS 키로는 Walrus에서 복구 목록을 찾지 못했습니다. 다음 경우에 그렇습니다. \
+     Walrus 사본을 켠 적이 없거나, 확장 프로그램 지갑이나 가져온 개인 키로 저장 비용을 냈거나 \
+     (그 주소는 NMTS 키로 계산할 수 없습니다. --owner 로 알려 주십시오), 큰 파일만 있어서 \
+     묶음이 아니라 따로 올라가 있는 경우입니다. 저장해 두신 복구 목록 파일이나 복구 키트가 \
      있으면 --map 으로 그대로 쓰실 수 있습니다.",
 );
 
 pub const FIND_LIST_NAME: Line = Line(
     "the list stored on the storage network",
-    "저장망에 있는 복구 목록",
+    "Walrus에 있는 복구 목록",
 );
 
 pub const FIND_TRUNCATED: Line = Line(
     "This address holds more objects than one search walks through, so bundles may have been \
      missed. If nothing was found, say --map and use a saved file instead.",
-    "이 주소가 가진 물건이 한 번의 검색이 훑는 것보다 많아서, 못 본 꾸러미가 있을 수 있습니다. \
+    "이 주소가 가진 객체가 한 번의 검색이 훑는 것보다 많아서, 못 본 묶음이 있을 수 있습니다. \
      아무것도 못 찾았다면 --map 으로 저장해 두신 파일을 쓰십시오.",
 );
 
@@ -238,8 +238,8 @@ pub const OWN_QUILT_UNKNOWN: Line = Line(
     "is stored in the bundle this recovery list itself came from, and this list was read from a \
      file, so there is nothing here that says which bundle that was. Run this again pointing at \
      the NMTS key instead of the file, and the list will be found where it is stored.",
-    "이 복구 목록이 실려 있던 꾸러미 안에 있습니다. 그런데 이 목록은 파일에서 읽었고, 파일에는 \
-     그것이 어느 꾸러미였는지가 적혀 있지 않습니다. 파일 대신 NMTS 키로 다시 실행하시면 목록을 \
+    "이 복구 목록이 실려 있던 묶음 안에 있습니다. 그런데 이 목록은 파일에서 읽었고, 파일에는 \
+     그것이 어느 묶음이었는지가 적혀 있지 않습니다. 파일 대신 NMTS 키로 다시 실행하시면 목록을 \
      그것이 저장된 자리에서 찾습니다.",
 );
 
@@ -247,7 +247,7 @@ pub const PART_PLACEMENT_UNVERIFIABLE: Line = Line(
     "note: this list is an older version that did not record where each piece belongs, so the \
      order of the pieces is what the list claims and could not be checked against the pieces \
      themselves.",
-    "참고: 이 복구 목록은 조각의 자리를 기록하지 않던 옛 판이라, 조각의 순서는 목록의 주장일 뿐 \
+    "참고: 이 복구 목록은 조각의 자리를 기록하지 않던 옛 버전이라, 조각의 순서는 목록의 주장일 뿐 \
      조각 자체와 대조하지 못했습니다.",
 );
 
@@ -270,7 +270,7 @@ pub const GUI_CODE_STAYS_HERE: Line = Line(
 
 pub const GUI_OPENED: Line = Line(
     "  A browser was asked to open it for you.",
-    "  브라우저에 열어 달라고 부탁해 두었습니다.",
+    "  브라우저에 이 주소를 열라고 요청했습니다.",
 );
 
 pub const GUI_ASK_IN_TERMINAL: Line = Line(
@@ -291,8 +291,8 @@ pub const GUI_CLOSED: Line = Line(
 );
 
 pub const GUI_NO_PORT: Line = Line(
-    "A door could not be opened on this machine for the control window.",
-    "조작 화면을 위한 통로를 이 기계에서 열지 못했습니다.",
+    "A port could not be opened on this machine for the control window.",
+    "조작 화면을 위한 포트를 이 기계에서 열지 못했습니다.",
 );
 
 pub const GUI_NEED_DESTINATION: Line = Line(
@@ -334,7 +334,7 @@ pub const KIT_CARRIES_CODE: Line = Line(
 pub const KIT_NO_LIST: Line = Line(
     "This recovery kit has no recovery list inside it — it was taken before there were any files, \
      or by an older version of NMTS. Use the recovery list file instead.",
-    "이 복구 키트 안에는 복구 목록이 없습니다. 파일이 하나도 없을 때 받았거나, 예전 판의 \
+    "이 복구 키트 안에는 복구 목록이 없습니다. 파일이 하나도 없을 때 받았거나, 예전 버전의 \
      NMTS에서 받은 것입니다. 복구 목록 파일을 쓰십시오.",
 );
 
@@ -346,7 +346,7 @@ pub const KIT_DAMAGED: Line = Line(
 pub const KIT_TOO_NEW: Line = Line(
     "This recovery kit was written in a newer format than this build understands. Use a newer \
      nmts-recovery; nothing was read.",
-    "이 복구 키트는 이 판이 아는 것보다 새로운 형식으로 쓰였습니다. 더 새로운 nmts-recovery를 \
+    "이 복구 키트는 이 버전이 아는 것보다 새로운 형식으로 쓰였습니다. 더 새로운 nmts-recovery를 \
      쓰십시오. 아무것도 읽지 않았습니다.",
 );
 
