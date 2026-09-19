@@ -2,9 +2,7 @@
 
 *[한국어](CONTRIBUTING.ko.md)*
 
-`nmts-recovery` rebuilds your files from Walrus storage without [NMTS](https://nmts.me) — the other
-half of the promise that your files do not depend on this service continuing to exist. This file
-says what is welcome here and what cannot be accepted.
+`nmts-recovery` rebuilds your files from Walrus storage without [NMTS](https://nmts.me).
 
 **Talk about NMTS — [Discord](https://discord.gg/pcmRkVmVZk).** Questions, ideas, and what
 people are building with it. English or Korean; both are read.
@@ -18,9 +16,9 @@ cargo build --release
 cargo test
 ```
 
-⚠ **The most valuable thing you can test is the thing the program is for.** Take a recovery list
+⚠ **Test a real recovery.** Take a recovery list
 and an NMTS key, run it against the public aggregators, and check that the bytes that come out
-are the bytes that went in. If they are not, that is the report worth writing.
+are the bytes that went in. If they are not, report it.
 
 ## What is welcome
 
@@ -28,9 +26,9 @@ are the bytes that went in. If they are not, that is the report worth writing.
 - **Questions** about the format, the code, or a guarantee you are trying to check.
 - **Ideas**, including ones that say the current design is wrong.
 - **Independent verification.** Build it yourself, run the tests, read the format documents, and
-  say where the code and the documents disagree. That is the most useful thing anyone can send.
+  say where the code and the documents disagree.
 
-**Write in English or in Korean.** Both are read.
+**Write in English or in Korean.**
 
 ## Sending code
 
@@ -42,12 +40,12 @@ a comment on it:
 The description is the better place: GitHub has no way to delete a pull request, so a sentence
 there stays put. Either is accepted.
 
-That is the whole agreement process — no signature, no legal name, no address, no form. The
+Nothing else is needed: no signature, legal name, address or form. The
 agreement is [CLA.md](CLA.md); [CLA.ko.md](CLA.ko.md) explains what each clause means, in Korean,
 for anyone who would rather read it that way. It is the same agreement for every needmoretruth repository,
 so agreeing once is enough.
 
-The short version of what it does: you keep the copyright in what you wrote, and we get a licence
+You keep the copyright in what you wrote, and we get a licence
 broad enough to keep the whole program under one owner. That matters because different licence
 terms are offered to anyone whose situation Apache-2.0 does not fit, and that offer can only be
 made by whoever holds all of it.
@@ -87,16 +85,15 @@ line is needed either way, in the pull request or in the mail.
 **If you would rather not open a pull request, paste the diff in an issue.** It is read the same
 way. The agreement line is still needed before any of it is used.
 
-**This is the last way back to a file when NMTS is gone**, so a change is read with that in mind:
-what happens when the network is down, when the input is a truncated file, when the person has only
-the printed sheet. Expect questions in that shape.
+A change is read for what happens when the network is down, when the input is a truncated file, when the person has only
+the printed sheet.
 
 ## What cannot be accepted
 
 - Work that is not yours to give, or that carries a licence you have not told us about.
 - A change with no way to tell whether it works. New behaviour comes with a test.
 - A rewrite of something that already works, sent without asking first. Say what you want to
-  change in an issue before writing it, and you will not waste an afternoon.
+  change in an issue before writing it.
 
 ## Conduct
 

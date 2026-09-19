@@ -2,16 +2,16 @@
 
 Get your files back from Walrus storage **without NMTS**, using your NMTS key and the
 recovery list you saved. NMTS is **NeedMoreTruthStorage** — end-to-end encrypted cloud storage on
-the Walrus network, built by one developer ([needmoretruth](https://github.com/needmoretruth)); the
-site is **https://nmts.me**.
+the Walrus network, built by one developer ([needmoretruth](https://github.com/needmoretruth)).
 
 Your **NMTS key** is what NMTS used to call your account code. Only the name changed: the flag
 names, the file formats and the derivation are the same.
 
 [NMTS](https://nmts.me) is end-to-end encrypted file storage built on Walrus: every file is
 encrypted in your browser before it is uploaded, and every key comes from the NMTS key, which
-never leaves your device. This program is the other half of that promise. If NMTS disappears, your
-files must still be recoverable, and you should not have to take anyone's word for it.
+never leaves your device. This program decrypts and rebuilds those files with no NMTS server
+involved. Its source is Apache-2.0, the format is documented, and you can build it yourself from
+this repository.
 
 NMTS charges nothing for the service: storage is bought from the Walrus network, for a period,
 from the user's own wallet, and one developer builds and runs it. This program, the command-line
@@ -32,8 +32,8 @@ arbitrate it.
 Either of these:
 
 - **Your recovery kit** (`nmts-recovery-kit-….txt`): one file holding your NMTS key and the
-  recovery list. Hand this program that file and it needs nothing else. Which is also why anyone
-  who takes that file takes your account.
+  recovery list. Hand this program that file and it needs nothing else. The kit holds your NMTS
+  key, so whoever holds the kit holds the account.
 - **Your recovery list** (`.nmtsmap`) **and your NMTS key.** The list is encrypted and the
   key opens it, so keeping them apart is what makes losing one of them survivable.
 
@@ -129,8 +129,8 @@ A Sui node learns that somebody is interested in that address, and an aggregator
 somebody asked for those patches; neither is given your NMTS key.
 
 Tell it `--owner 0xADDRESS` if the uploads were paid for with a browser-extension or imported
-wallet, and `--wallets N` if the account used more than the first derived wallet. Finding nothing
-is an answer, and there are three ordinary reasons for it: the copy was never switched on, the
+wallet, and `--wallets N` if the account used more than the first derived wallet. It finds
+nothing in three cases: the copy was never switched on, the
 wallet that paid is not one this key derives, or the account uploaded only large files, which are
 stored as blobs of their own rather than inside the quilt that carries the list. Use your
 `.nmtsmap` file in those cases.
@@ -142,9 +142,9 @@ nmts-recovery --gui
 ```
 
 It prints an address, opens it if it can, and serves a control page: choose your recovery list,
-see what it holds, tick what you want, say where it goes, and watch it happen. The page draws a
+see what it holds, tick what you want, and say where it goes. The page draws a
 list and sends back which rows you ticked; every key, every fetch, every decryption and every file
-written happens in the Rust binary. The browser holds no key and writes nothing.
+written happens in the Rust binary.
 
 **Your NMTS key is typed in the terminal, never in the browser.** A browser is the largest
 attack surface on a personal machine: extensions read page contents, password managers remember
@@ -154,7 +154,7 @@ to read a file that is not a recovery list, which is how a **kit** (list and key
 kept out of the browser: if you saved only a kit, the page gives you the terminal command instead.
 No route in the control channel takes an NMTS key, and a test asserts it.
 
-Why a page served on your own machine can be trusted:
+What keeps the page reachable only from this machine:
 
 1. The listener is bound to `127.0.0.1`.
 2. A fresh 32-byte token is minted per run and printed once in the terminal; every request carries
@@ -173,7 +173,7 @@ opening that copy on its own does nothing, on purpose.
 ## Getting your wallet back too
 
 Every key the account has is computed from the NMTS key, including the wallet that pays for
-storage. Nothing else can do that computation for you.
+storage.
 
 ```sh
 nmts-recovery --derive              # account id, fingerprint, public code, wallet addresses
