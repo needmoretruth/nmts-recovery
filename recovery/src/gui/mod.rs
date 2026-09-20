@@ -350,7 +350,7 @@ fn open_map(shared: &Arc<Mutex<Session>>, name: &str, text: &str, a: &Args) {
     //    a person takes, and the page polls throughout — holding it here would freeze the window
     //    that is telling them to type.
     println!("\n{}", msg::GUI_ASK_IN_TERMINAL.get(lang));
-    let code = match crate::read_account_code(a.code_file.as_deref(), lang) {
+    let code = match crate::account_code(a, lang) {
         Ok(c) => c,
         Err(e) => return fail(e),
     };

@@ -135,6 +135,30 @@ wallet that paid is not one this key derives, or the account uploaded only large
 stored as blobs of their own rather than inside the quilt that carries the list. Use your
 `.nmtsmap` file in those cases.
 
+## When you have no NMTS key, but logged in with a wallet
+
+If you used wallet login at nmts.me, the account screen offers a **wallet recovery file**. It holds
+your NMTS key, locked so that only your wallet's signature of one message opens it. With that file
+and that signature, this program finds the NMTS key — nothing is typed and no NMTS server is
+contacted.
+
+```sh
+nmts-recovery --print-wallet-message 0xYOUR_ADDRESS > message.txt     # the exact bytes to sign
+# sign message.txt with your wallet as a PERSONAL MESSAGE; save what it returns to signature.txt
+nmts-recovery --map list.nmtsmap --wallet-slot nmts-wallet-recovery.bin \
+              --wallet-signature-file signature.txt --out ~/recovered
+```
+
+The signature has to be a personal-message signature. A transaction signature over the same text is
+made of different bytes and will not open the file. Add `--wallet-account N` or `--wallet-app NAME`
+to the first command if the wallet was added with them: both are inside the signed text. The
+signature is read from a file and is refused as an argument, for the reason the NMTS key is — it
+opens the account, and an argument lands in the shell history.
+
+A wallet that signs the same message differently each time cannot open the file: an account that
+logs in with Google or Apple (zkLogin), a multi-signature account, a passkey account. The wallet
+recovery file is not the recovery list. Keep both.
+
 ## 🌐 Run it from a browser instead
 
 ```sh

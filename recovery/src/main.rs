@@ -51,6 +51,7 @@ mod mapfile;
 mod msg;
 mod restore;
 mod source;
+mod wallet;
 
 use std::io::{IsTerminal, Write};
 use std::path::Path;
@@ -87,6 +88,7 @@ fn main() -> ExitCode {
         Mode::Gui => gui::run(&a),
         Mode::WriteGui => write_gui(&a),
         Mode::Derive => show_derived(&a),
+        Mode::PrintWalletMessage => wallet::print_message(&a),
         _ => run(&a),
     };
     match outcome {
@@ -109,7 +111,7 @@ fn write_gui(a: &args::Args) -> Result<ExitCode, String> {
 /// Print everything an NMTS key turns into. No list, no network, nothing written.
 fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
     let lang = a.lang;
-    let code = read_account_code(a.code_file.as_deref(), lang)?;
+    let code = account_code(a, lang)?;
     let keys = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
     let d = derive::from_keys(&keys, a.wallets, a.secrets);
 
@@ -186,7 +188,7 @@ fn run(a: &args::Args) -> Result<ExitCode, String> {
 
 /// Look the recovery list up on the storage network with nothing but the NMTS key.
 fn find_on_network(a: &args::Args, lang: Lang) -> Result<(RecoveryManifest, String), String> {
-    let code = read_account_code(a.code_file.as_deref(), lang)?;
+    let code = account_code(a, lang)?;
     let keys = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
 
     let rpcs: Vec<String> = if a.rpcs.is_empty() {
@@ -265,13 +267,14 @@ fn open_from_file(
     //    person to type a code that is printed in the file they just handed over would protect
     //    nothing — whoever has the file has the code — while teaching them the question means
     //    something. `--code-file` still wins, for anyone keeping the two apart deliberately.
-    let code = match (a.code_file.as_deref(), code_in_kit) {
-        (Some(path), _) => read_account_code(Some(path), lang)?,
-        (None, Some(from_kit)) => {
+    //    A wallet slot wins for the same reason `--code-file` does: it was asked for.
+    let asked_elsewhere = a.code_file.is_some() || a.wallet_slot.is_some();
+    let code = match code_in_kit {
+        Some(from_kit) if !asked_elsewhere => {
             println!("{}", msg::KIT_CARRIES_CODE.get(lang));
             parse_account_code(&from_kit, lang)?
         }
-        (None, None) => read_account_code(None, lang)?,
+        _ => account_code(a, lang)?,
     };
     let keys = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
 
@@ -593,6 +596,19 @@ fn do_restore(
         //    script will report as a success.
         Ok(ExitCode::from(3))
     }
+}
+
+/// The NMTS key, by whichever road the caller asked for.
+///
+/// ⭐ ONE PLACE WHERE THE ROADS MEET, so nothing downstream knows there is more than one. A wallet
+///    slot plus the signature that opens it yields the same [`AccountCode`] a typed key does, and
+///    the list, the fetch, the decryption and the writing cannot tell them apart. `args.rs` refuses
+///    both roads at once, so this is a choice already made by the time it is read here.
+fn account_code(a: &args::Args, lang: Lang) -> Result<AccountCode, String> {
+    if a.wallet_slot.is_some() {
+        return wallet::open_account_code(a, lang);
+    }
+    read_account_code(a.code_file.as_deref(), lang)
 }
 
 /// Read the NMTS key: from a file if asked, otherwise from the terminal.

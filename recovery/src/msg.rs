@@ -395,6 +395,139 @@ pub const DERIVE_NOTHING_ELSE: Line = Line(
     "아무것도 저장하지 않았고 어디로도 보내지 않았습니다. 브라우저가 하는 것과 같은 계산입니다.",
 );
 
+// ── Opening with a wallet's signature (NCF-3 §1.7) ───────────────────────────────────────────
+//
+// One identifier per refusal the engine gives; `wallet.rs` maps them and a test holds that mapping.
+// «Slot» is the engine's word. A person reads «wallet recovery file».
+
+/// Facts: the signature must be made with the wallet's PERSONAL MESSAGE signing (Sui's
+/// PersonalMessage intent — what a wallet calls "sign message"). A transaction-intent signature
+/// over the same text hashes different bytes, gives a different 64-byte signature and therefore a
+/// different wrapping key, so the slot will not open. The text must be signed exactly as printed,
+/// with no trailing newline and nothing added.
+pub const WALLET_HOW_TO_SIGN: Line = Line(
+    "Sign the text below with your wallet as a personal message, exactly as it is printed. A \
+     transaction signature over the same text is made of different bytes and will not open \
+     your wallet recovery file.",
+    "아래 글을 지갑에서 개인 메시지 서명으로, 찍힌 그대로 서명하십시오. 같은 글에 거래 서명을 \
+     하면 바이트가 달라져 지갑 복구 파일이 열리지 않습니다.",
+);
+
+/// Facts: the text given was neither base64 (what a wallet returns) nor hex, so
+/// nothing was decoded and nothing was tried against the slot.
+pub const WALLET_SIGNATURE_NOT_TEXT: Line = Line(
+    "That signature is neither base64 nor hex. Use what your wallet returned, unchanged.",
+    "그 서명은 base64도 16진수도 아닙니다. 지갑이 돌려준 것을 그대로 쓰십시오.",
+);
+
+/// Facts: the signature was empty, so not even the scheme flag was there to read.
+pub const WALLET_SIGNATURE_EMPTY: Line = Line("The signature is empty.", "서명이 비어 있습니다.");
+
+/// Facts: Sui flag 0x03, a multisig wallet. Its signature over one message depends on
+/// which signers took part, so the same message does not give the same bytes twice and a slot
+/// sealed under one would not reopen. Nothing can be done with this wallet here.
+pub const WALLET_MULTISIG: Line = Line(
+    "This is a multisig wallet's signature. Multisig wallets sign differently depending on which \
+     signers take part, so one cannot open a wallet recovery file.",
+    "다중 서명 지갑의 서명입니다. 다중 서명 지갑은 어느 서명자가 참여하느냐에 따라 서명이 \
+     달라지므로 지갑 복구 파일을 열 수 없습니다.",
+);
+
+/// Facts: Sui flag 0x05, zkLogin. The ephemeral key and the proof change from session
+/// to session, so the signature is never the same twice.
+pub const WALLET_ZKLOGIN: Line = Line(
+    "This signature comes from a wallet account that logs in with Google, Apple or a similar \
+     service (zkLogin). It signs with a key that changes every session, so it cannot open a \
+     wallet recovery file.",
+    "Google · Apple 같은 서비스로 로그인하는 지갑 계정(zkLogin)의 서명입니다. 세션마다 바뀌는 키로 \
+     서명하므로 지갑 복구 파일을 열 수 없습니다.",
+);
+
+/// Facts: Sui flag 0x06, a passkey wallet. WebAuthn signs over data that includes a
+/// counter, so no two signatures over one message are the same.
+pub const WALLET_PASSKEY: Line = Line(
+    "This is a passkey wallet's signature. A passkey signs differently every time, so one \
+     cannot open a wallet recovery file.",
+    "패스키 지갑의 서명입니다. 패스키는 서명이 매번 다르므로 지갑 복구 파일을 열 수 없습니다.",
+);
+
+/// Facts: the first byte named a signature scheme this build has never judged.
+/// `{flag}` is that byte. Refused rather than guessed — an allow list, not a deny list.
+pub const WALLET_UNKNOWN_SCHEME: Line = Line(
+    "This signature was made with scheme {flag}, which this program does not know.",
+    "이 서명은 {flag} 방식으로 만들어졌고, 이 프로그램은 그 방식을 모릅니다.",
+);
+
+/// Facts: the scheme is one of the three accepted ones, but the serialized signature
+/// is not the length that scheme has (`{expected}` bytes; `{got}` were given). Refused rather than
+/// sliced, because bytes 1..65 of a differently shaped buffer are not the signature.
+pub const WALLET_SIGNATURE_LENGTH: Line = Line(
+    "A signature of this kind is {expected} bytes; this one is {got}. Use the whole value your \
+     wallet returned.",
+    "이 방식의 서명은 {expected}바이트인데 이것은 {got}바이트입니다. 지갑이 돌려준 값을 통째로 \
+     쓰십시오.",
+);
+
+/// Facts: a slot is exactly `{expected}` bytes and this file held `{got}`. The file
+/// was read but nothing in it was treated as a slot — most often the wrong file was given.
+pub const WALLET_SLOT_LENGTH: Line = Line(
+    "A wallet recovery file is {expected} bytes; this one is {got}. It is not the file the NMTS \
+     account screen gives you.",
+    "지갑 복구 파일은 {expected}바이트인데 이 파일은 {got}바이트입니다. NMTS 계정 화면에서 받는 \
+     파일이 아닙니다.",
+);
+
+/// Facts: the slot's first byte is a version this build does not write (`{version}`),
+/// so it was made by a newer NMTS. Its own reason, not an authentication failure: "your program is
+/// older than this slot" and "this is the wrong wallet" have different answers.
+pub const WALLET_SLOT_VERSION: Line = Line(
+    "This wallet recovery file was written in a newer format (version {version}) than this build understands. Use \
+     a newer nmts-recovery; nothing was opened.",
+    "이 지갑 복구 파일은 이 버전이 아는 것보다 새로운 형식(버전 {version})으로 쓰였습니다. 더 새로운 \
+     nmts-recovery를 쓰십시오. 아무것도 열지 않았습니다.",
+);
+
+/// Facts: the slot's second byte names a kind this layer has not reserved (`{kind}`).
+/// Reachable only from a slot this program did not write.
+pub const WALLET_SLOT_KIND: Line = Line(
+    "This wallet recovery file is of a kind ({kind}) this program does not know.",
+    "이 지갑 복구 파일은 이 프로그램이 모르는 종류({kind})입니다.",
+);
+
+/// Facts: the slot did not open under this signature. One answer for three causes on
+/// purpose — a different wallet, a different message (wrong account number or app), or altered
+/// bytes — because telling them apart would tell somebody holding a fetched slot whether their
+/// guess at the wallet was getting warmer.
+pub const WALLET_SLOT_DOES_NOT_OPEN: Line = Line(
+    "This signature does not open this wallet recovery file. It may come from a different wallet, \
+     or the text it signed may carry a different account number or app name.",
+    "이 서명으로는 이 지갑 복구 파일이 열리지 않습니다. 다른 지갑의 서명이거나, 서명한 글의 계정 \
+     번호나 앱 이름이 다를 수 있습니다.",
+);
+
+/// Facts: the address is inside the signed bytes, so it is refused rather than
+/// repaired: trimming a space or lowercasing a capital would sign a different message. The shape
+/// is `0x` followed by 64 lowercase hex characters.
+pub const WALLET_ADDRESS_NOT_CANONICAL: Line = Line(
+    "A wallet address is 0x followed by 64 lowercase hex characters. It is part of the text you \
+     sign, so it is not corrected for you.",
+    "지갑 주소는 0x 뒤에 소문자 16진수 64자입니다. 서명하는 글에 그대로 들어가므로 대신 고쳐 주지 \
+     않습니다.",
+);
+
+/// Facts: account numbers start at 1; 0 was given.
+pub const WALLET_ACCOUNT_ZERO: Line =
+    Line("Account numbers start at 1.", "계정 번호는 1부터입니다.");
+
+/// Facts: the app scope is 1 to 64 characters of a-z, 0-9, dot and hyphen, starting
+/// and ending with a letter or digit. Inside the signed bytes, so refused rather than repaired.
+pub const WALLET_APP_NOT_CANONICAL: Line = Line(
+    "An app name is 1 to 64 characters of a-z, 0-9, dot and hyphen, starting and ending with a \
+     letter or digit. It is part of the text you sign, so it is not corrected for you.",
+    "앱 이름은 a-z, 0-9, 점, 붙임표로 된 1~64자이고 처음과 끝은 글자나 숫자입니다. 서명하는 글에 \
+     그대로 들어가므로 대신 고쳐 주지 않습니다.",
+);
+
 /// Every line above, in one place.
 ///
 /// ⛔ This exists so the both-languages check below has something to iterate. A list maintained by
@@ -466,6 +599,21 @@ pub const ALL_LINES: &[Line] = &[
     DERIVE_AI_WARNING,
     DERIVE_AI_HINT,
     DERIVE_NOTHING_ELSE,
+    WALLET_HOW_TO_SIGN,
+    WALLET_SIGNATURE_NOT_TEXT,
+    WALLET_SIGNATURE_EMPTY,
+    WALLET_MULTISIG,
+    WALLET_ZKLOGIN,
+    WALLET_PASSKEY,
+    WALLET_UNKNOWN_SCHEME,
+    WALLET_SIGNATURE_LENGTH,
+    WALLET_SLOT_LENGTH,
+    WALLET_SLOT_VERSION,
+    WALLET_SLOT_KIND,
+    WALLET_SLOT_DOES_NOT_OPEN,
+    WALLET_ADDRESS_NOT_CANONICAL,
+    WALLET_ACCOUNT_ZERO,
+    WALLET_APP_NOT_CANONICAL,
 ];
 
 /// `n bytes` in a form a person reads. Deliberately plain: no locale-specific grouping, because
@@ -486,109 +634,5 @@ pub fn human_bytes(n: u64) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn byte_sizes_read_as_sizes() {
-        assert_eq!(human_bytes(0), "0 B");
-        assert_eq!(human_bytes(999), "999 B");
-        assert_eq!(human_bytes(1_000), "1.0 KB");
-        assert_eq!(human_bytes(1_500_000), "1.5 MB");
-        assert_eq!(human_bytes(u64::MAX), "18446744.1 TB");
-    }
-
-    /// ⛔ A half-translated tool is worse than an English one: the person hits the Korean sentence,
-    ///    trusts it, and then meets a blank where the next sentence should be.
-    #[test]
-    fn every_line_exists_in_both_languages() {
-        for line in ALL_LINES {
-            assert!(!line.0.trim().is_empty(), "an English line is empty");
-            assert!(!line.1.trim().is_empty(), "a Korean line is empty");
-        }
-    }
-
-    /// ⛔ The check above is only worth having if nothing can be declared and left out of the list
-    ///    it walks. So this counts what the file actually declares, from the file itself.
-    ///
-    /// ⚠ The count is taken from the source with every run of whitespace flattened to one space,
-    ///   NOT line by line. A declaration split over two lines — the name and its type on one, the
-    ///   `Line(` on the next — was invisible to both halves of this check at once: the counter
-    ///   skipped the line, and nothing pushed whoever wrote it towards the list below. The two
-    ///   numbers then agreed, and a message existed that neither language check had ever read.
-    ///   Flattening first means how a declaration is wrapped cannot decide whether it is counted,
-    ///   so rustfmt may rewrap this file freely. What flattening must not do is let one
-    ///   declaration's search run on into the next one — see the `;` stop below.
-    ///
-    /// ⚠ Both needles are spelled in two pieces, for the reason the network test in `args.rs`
-    ///   spells its own in two pieces: written whole, the lines below would read as one more
-    ///   declaration once the line breaks are gone, and this file would count a message it does
-    ///   not have.
-    #[test]
-    fn no_message_can_be_added_without_joining_the_list_that_is_checked() {
-        const DECL: &str = concat!("pub ", "const ");
-        const OF_TYPE_LINE: &str = concat!(": Line = ", "Line");
-        let source = include_str!("msg.rs");
-        let flat = source.split_whitespace().collect::<Vec<_>>().join(" ");
-        let declared = flat
-            .match_indices(DECL)
-            .filter(|&(at, _)| {
-                let after_declaration = &flat[at + DECL.len()..];
-                after_declaration
-                    .split_once('(')
-                    .is_some_and(|(name_and_type, _)| {
-                        // ⚠ A `;` before that `(` means the declaration already ended and the
-                        //   paren belongs to whatever comes next. Without this second stop, an
-                        //   ordinary constant declared among the messages — say a length as a
-                        //   `usize`, which ends at its own semicolon — reads on into the following
-                        //   message's opening paren and is counted as a message. Measured on this
-                        //   file: 62 counted where 61 exist, and the failure then told whoever
-                        //   added the constant to register a message that does not exist. The
-                        //   same stop is what keeps the list below out of the count wherever in
-                        //   the file it sits, instead of only while it happens to be written last.
-                        //   ⛔ Nothing in this comment may spell either needle: the count is taken
-                        //   from this file, so a sentence about a declaration would become one.
-                        !name_and_type.contains(';') && name_and_type.ends_with(OF_TYPE_LINE)
-                    })
-            })
-            .count();
-        println!("{declared} message declarations judged");
-        // ⚠ A floor. A search that has stopped matching how this file is written would otherwise
-        //   find nothing, and nothing would agree with an empty list without complaining.
-        assert!(
-            declared >= 55,
-            "only {declared} declarations were found in this file — this search no longer matches \
-             how the messages above are written"
-        );
-        // ⛔ Two numbers can be made to agree without the file being honest: list one message
-        //   twice and leave another out, and the totals still match while the language checks
-        //   above never read the one that was left out. Measured on this file — a message whose
-        //   Korean half was an empty string, plus a second mention of an existing entry, and this
-        //   check stayed green. Names are not visible here at run time, so the text stands in for
-        //   the name: two entries carrying the same pair are either that trick or a copy-paste.
-        let mut seen = std::collections::HashSet::new();
-        for line in ALL_LINES {
-            assert!(
-                seen.insert((line.0, line.1)),
-                "the list names the same message twice, which would let the totals below agree \
-                 while another message went unlisted and unread: {}",
-                line.0
-            );
-        }
-        assert_eq!(
-            declared,
-            ALL_LINES.len(),
-            "{declared} messages are declared but {} are in ALL_LINES — add the new one there",
-            ALL_LINES.len()
-        );
-    }
-
-    /// The English text is what a person quotes when something goes wrong, so it may not be a
-    /// translation of nothing.
-    #[test]
-    fn the_two_languages_are_actually_different_text() {
-        for line in ALL_LINES {
-            assert_ne!(line.0, line.1, "a line was never translated: {}", line.0);
-        }
-    }
-}
+#[path = "msg_tests.rs"]
+mod tests;

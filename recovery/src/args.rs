@@ -13,6 +13,10 @@
 //! captured verbatim by CI logs and crash reporters. The key is read from the terminal, or from
 //! a file the caller controls the permissions of. See `read_account_code` in `main.rs`.
 //!
+//! The same rule covers the wallet signature that opens a slot, because it unwraps the same key:
+//! there is no `--wallet-signature`, only `--wallet-signature-file`. Both spellings are refused by
+//! name rather than as unknown options, so the answer is the road to take and not a spelling hunt.
+//!
 //! # English is the default, in every environment
 //! Not auto-detected. A recovery may be run by whoever ends up holding the drive, on a machine
 //! whose locale says nothing about who is reading the screen, and a tool that changes language
@@ -36,6 +40,8 @@ pub enum Mode {
     WriteGui,
     /// Print what the NMTS key derives — no list, no network, nothing written.
     Derive,
+    /// Write out the exact bytes a wallet must sign. No key, no list, no network.
+    PrintWalletMessage,
 }
 
 /// Message language. English unless `--lang ko` says otherwise.
@@ -102,6 +108,17 @@ pub struct Args {
     pub ai_accounts: bool,
     /// How many levels of AI accounts `--ai-accounts` walks. 1 = three keys, 2 = twelve.
     pub ai_depth: u32,
+    /// The address whose sign-in message [`Mode::PrintWalletMessage`] writes out (NCF-3 §1.7).
+    pub wallet_message_address: Option<String>,
+    /// The `Account:` line of that message. Inside the signed bytes, so it decides the slot.
+    pub wallet_account: u32,
+    /// The optional `App:` line of that message. Also inside the signed bytes.
+    pub wallet_app: Option<String>,
+    /// The slot file a wallet's signature opens, standing in for a typed NMTS key.
+    pub wallet_slot: Option<PathBuf>,
+    /// A file holding the serialized signature. The only road: a signature is key material, and
+    /// `--wallet-signature` is refused for the reason `--code` is.
+    pub wallet_signature_file: Option<PathBuf>,
 }
 
 /// Parsing outcome: either arguments, or text to print and an exit code.
@@ -123,10 +140,24 @@ const MAX_WALLETS: u32 = 100;
 /// Levels of AI accounts walked when `--ai-accounts` names no depth.
 const DEFAULT_AI_DEPTH: u32 = 1;
 
+/// The `Account:` line's number when `--wallet-account` names none.
+///
+/// ⚠ One, because an account is numbered from 1 and almost every wallet opens the first. The
+/// number is INSIDE the signed bytes, so a default that drifted would print a message that signs
+/// to a different slot — which is why it is a named constant rather than a literal in two places.
+const DEFAULT_WALLET_ACCOUNT: u32 = 1;
+
 /// A ceiling on `--depth`. Two is the whole tree the product can create (product rule of 2026-09-06: three accounts,
 /// and three under each). Deeper costs a full Argon2id pass per account for codes nothing made.
 const MAX_AI_DEPTH: u32 = 2;
 
+// The facts the OPENING WITH A WALLET block below has to carry, if it is ever reworded: a slot file is 62 bytes, holds the NMTS key wrapped
+//   under a wallet's signature, and is downloaded from the account screen; opening one contacts
+//   nothing; the signature must be made with the wallet's PERSONAL MESSAGE signing (Sui's
+//   PersonalMessage intent, what a wallet calls "sign message"), because a transaction-intent
+//   signature over the same text hashes different bytes and will not open the slot; the message
+//   must be signed exactly as printed, with no trailing newline added; and a signature is never an
+//   argument, for the reason the NMTS key is never one.
 const USAGE: &str = "\
 nmts-recovery — restore files uploaded with NMTS, without NMTS.
 
@@ -136,6 +167,8 @@ USAGE
   nmts-recovery --gui                     restore, from a page in your browser
   nmts-recovery --map FILE --list         show what a list covers and stop
   nmts-recovery --derive                  show what your NMTS key derives
+  nmts-recovery --print-wallet-message 0xADDRESS > message.txt
+                                          the exact text your wallet must sign
 
 WHAT IT NEEDS
   Your NMTS key, and your recovery list. The list is encrypted; the key opens
@@ -154,6 +187,8 @@ WHAT GOES OUT
   files, from this address, right now. --rpc names your own node; --map avoids it.
   A recovery list can name storage addresses of its own. Those are not contacted
   unless you ask, with --use-recorded-aggregators.
+  A wallet recovery file and the signature that opens it are read on this machine
+  and go nowhere. No NMTS server is contacted for either, and neither is --print-wallet-message.
 
 OPTIONS
   --map FILE           the recovery list (.nmtsmap) you saved, OR a recovery kit
@@ -204,6 +239,26 @@ OPTIONS
   --help               this text.
   --version            version and license.
 
+OPENING WITH A WALLET
+  A wallet recovery file comes from your NMTS account screen. It holds your NMTS
+  key, locked so that only your wallet's signature of one message opens it. This
+  program opens it with no NMTS key typed and nothing contacted. Your wallet must
+  sign the message as a PERSONAL MESSAGE, byte for byte as printed; a transaction
+  signature over the same text is made of different bytes and will not open it.
+  --print-wallet-message 0xADDRESS
+                       write the exact bytes your wallet must sign to the screen,
+                       and stop. Redirect it to a file to keep it byte for byte.
+  --wallet-account N   the account number inside that message. Default: 1.
+  --wallet-app NAME    the optional product scope inside that message.
+  --wallet-slot FILE   the wallet recovery file you saved from your NMTS account
+                       screen. With the signature below it gives the NMTS key, so
+                       nothing is typed. Takes the place of --code-file.
+  --wallet-signature-file FILE
+                       the signature your wallet returned, in a file. Base64 or hex.
+                       There is no --wallet-signature: that signature opens your
+                       account, and an argument lands in your shell history and is
+                       visible to every other user on this machine.
+
 THE NMTS KEY IS NEVER AN ARGUMENT. It is typed when this program asks, or read
 from --code-file. An argument would land in your shell history and be visible to every
 other user on the machine.
@@ -232,8 +287,14 @@ pub fn parse(argv: &[String]) -> Parsed {
         secrets: false,
         ai_accounts: false,
         ai_depth: DEFAULT_AI_DEPTH,
+        wallet_message_address: None,
+        wallet_account: DEFAULT_WALLET_ACCOUNT,
+        wallet_app: None,
+        wallet_slot: None,
+        wallet_signature_file: None,
     };
     let mut map_seen = false;
+    let mut wallet_account_seen = false;
 
     let mut i = 0;
     while i < argv.len() {
@@ -367,6 +428,56 @@ pub fn parse(argv: &[String]) -> Parsed {
                 }
                 Err(e) => return Parsed::Print(e, 2),
             },
+            "--print-wallet-message" => match value("--print-wallet-message") {
+                Ok(v) => {
+                    a.mode = Mode::PrintWalletMessage;
+                    // ⛔ Not checked here. `0x` + 64 lowercase hex is the engine's rule, the
+                    //    address sits inside the bytes a person reads in the wallet popup, and a
+                    //    second copy of that rule in this file is a second thing to drift.
+                    a.wallet_message_address = Some(v);
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--wallet-account" => match value("--wallet-account") {
+                Ok(v) => match v.parse::<u32>() {
+                    Ok(n) => {
+                        // Zero is left to the engine, which refuses it with its own reason. This
+                        // only catches what is not a number at all.
+                        a.wallet_account = n;
+                        wallet_account_seen = true;
+                        2
+                    }
+                    _ => {
+                        return Parsed::Print(
+                            format!("--wallet-account does not understand \"{v}\"."),
+                            2,
+                        )
+                    }
+                },
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--wallet-app" => match value("--wallet-app") {
+                Ok(v) => {
+                    a.wallet_app = Some(v);
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--wallet-slot" => match value("--wallet-slot") {
+                Ok(v) => {
+                    a.wallet_slot = Some(PathBuf::from(v));
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--wallet-signature-file" => match value("--wallet-signature-file") {
+                Ok(v) => {
+                    a.wallet_signature_file = Some(PathBuf::from(v));
+                    2
+                }
+                Err(e) => return Parsed::Print(e, 2),
+            },
             "--only" => match value("--only") {
                 Ok(v) => {
                     a.only = Some(v);
@@ -422,7 +533,7 @@ pub fn parse(argv: &[String]) -> Parsed {
                 Ok(v) => return Parsed::Print(format!("--lang does not know \"{v}\"."), 2),
                 Err(e) => return Parsed::Print(e, 2),
             },
-            // ⛔ The one argument this program refuses on purpose. Saying so beats an "unknown
+            // ⛔ The arguments this program refuses on purpose. Saying so beats an "unknown
             //    option" that reads as a typo and invites the caller to look for the right
             //    spelling of a flag that must never exist.
             "--code" | "--account-code" => {
@@ -434,6 +545,18 @@ pub fn parse(argv: &[String]) -> Parsed {
                     2,
                 )
             }
+            // ⛔ A wallet's signature unwraps the NMTS key, so it is key material and the rule
+            //    above is the rule here: whoever holds it holds the account for as long as the
+            //    slot exists, and an argument is the one place a secret cannot be taken back from.
+            "--wallet-signature" => {
+                return Parsed::Print(
+                    "A wallet signature is not an argument: it opens the file that holds your \
+                     NMTS key, and as an argument it would be written to your shell history and visible to other \
+                     users on this machine. Put it in a file and use --wallet-signature-file.\n"
+                        .to_string(),
+                    2,
+                )
+            }
             other => return Parsed::Print(format!("Unknown option \"{other}\".\n\n{USAGE}"), 2),
         };
         i += taken;
@@ -441,7 +564,10 @@ pub fn parse(argv: &[String]) -> Parsed {
 
     // The GUI picks its list in the browser, writing the page out reads nothing, and deriving
     // needs only the NMTS key.
-    let map_optional = matches!(a.mode, Mode::Gui | Mode::WriteGui | Mode::Derive) || a.find;
+    let map_optional = matches!(
+        a.mode,
+        Mode::Gui | Mode::WriteGui | Mode::Derive | Mode::PrintWalletMessage
+    ) || a.find;
     if !map_seen && !map_optional {
         return Parsed::Print(
             format!("--map is required, or --find to look the list up on the storage network.\n\n{USAGE}"),
@@ -465,325 +591,43 @@ pub fn parse(argv: &[String]) -> Parsed {
     if a.mode == Mode::Restore && a.out.is_none() {
         return Parsed::Print(format!("--out is required when restoring.\n\n{USAGE}"), 2);
     }
+    // ── The wallet road: a slot and the signature that opens it, or neither ──────────────────
+    //
+    // Every check here is the same shape as the ones above: two flags that say the same thing are
+    // refused rather than ranked, and a half of a pair is named by its missing half. A slot
+    // without a signature would otherwise fall through to the NMTS-key prompt, and the person
+    // would type the secret they had just arranged not to need.
+    let signature_seen = a.wallet_signature_file.is_some();
+    if a.wallet_slot.is_some() && !signature_seen {
+        return Parsed::Print(
+            format!("--wallet-slot needs the signature that opens it: --wallet-signature-file FILE.\n\n{USAGE}"),
+            2,
+        );
+    }
+    if signature_seen && a.wallet_slot.is_none() {
+        return Parsed::Print(
+            format!("a wallet signature only means something with --wallet-slot.\n\n{USAGE}"),
+            2,
+        );
+    }
+    if a.wallet_slot.is_some() && a.code_file.is_some() {
+        return Parsed::Print(
+            format!("--wallet-slot and --code-file both say where your NMTS key comes from. Use one.\n\n{USAGE}"),
+            2,
+        );
+    }
+    // ⚠ Both of these are lines of the SIGNED MESSAGE and nothing else reads them. Accepted
+    //   quietly elsewhere, they would look like they had been applied to an opening that never
+    //   saw them.
+    if (wallet_account_seen || a.wallet_app.is_some()) && a.mode != Mode::PrintWalletMessage {
+        return Parsed::Print(
+            format!("--wallet-account and --wallet-app only mean something with --print-wallet-message.\n\n{USAGE}"),
+            2,
+        );
+    }
     Parsed::Run(Box::new(a))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn v(args: &[&str]) -> Vec<String> {
-        args.iter().map(|s| s.to_string()).collect()
-    }
-
-    #[test]
-    fn map_is_required() {
-        assert!(matches!(parse(&v(&["--list"])), Parsed::Print(_, 2)));
-    }
-
-    #[test]
-    fn restoring_needs_a_destination() {
-        assert!(matches!(
-            parse(&v(&["--map", "m.nmtsmap"])),
-            Parsed::Print(_, 2)
-        ));
-    }
-
-    #[test]
-    fn listing_does_not_need_a_destination() {
-        assert!(matches!(
-            parse(&v(&["--map", "m.nmtsmap", "--list"])),
-            Parsed::Run(_)
-        ));
-    }
-
-    /// The browser picks the list, so requiring one on the command line would mean typing a path
-    /// into a terminal to avoid typing a path into a terminal.
-    #[test]
-    fn the_gui_does_not_need_a_map_up_front() {
-        match parse(&v(&["--gui"])) {
-            Parsed::Run(a) => assert_eq!(a.mode, Mode::Gui),
-            Parsed::Print(msg, _) => panic!("--gui was refused: {msg}"),
-        }
-    }
-
-    /// ⛔ The refusal is the feature. If this ever passes as an ordinary flag, a secret starts
-    ///    landing in shell histories.
-    #[test]
-    fn the_account_code_cannot_be_passed_as_an_argument() {
-        match parse(&v(&["--map", "m.nmtsmap", "--code", "ABC"])) {
-            Parsed::Print(msg, 2) => assert!(msg.contains("shell history")),
-            _ => panic!("--code was accepted"),
-        }
-    }
-
-    /// ⛔ English regardless of the environment. A tool that changes language on its own produces
-    ///    output nobody can quote in a bug report, and the person reading the screen during a
-    ///    recovery is not necessarily the person whose machine it is.
-    #[test]
-    fn english_is_the_default_and_only_a_flag_changes_it() {
-        match parse(&v(&["--map", "m", "--list"])) {
-            Parsed::Run(a) => assert_eq!(a.lang, Lang::En),
-            _ => panic!("did not parse"),
-        }
-        match parse(&v(&["--map", "m", "--list", "--lang", "ko"])) {
-            Parsed::Run(a) => assert_eq!(a.lang, Lang::Ko),
-            _ => panic!("did not parse"),
-        }
-    }
-
-    #[test]
-    fn a_flag_missing_its_value_is_refused_rather_than_swallowing_the_next_flag() {
-        match parse(&v(&["--map", "--list"])) {
-            Parsed::Print(msg, 2) => assert!(msg.contains("--map needs a value")),
-            _ => panic!("--map swallowed --list"),
-        }
-    }
-
-    #[test]
-    fn aggregators_keep_their_order_and_lose_a_trailing_slash() {
-        match parse(&v(&[
-            "--map",
-            "m",
-            "--list",
-            "--aggregator",
-            "https://a.example/",
-            "--aggregator",
-            "https://b.example",
-        ])) {
-            Parsed::Run(a) => {
-                assert_eq!(
-                    a.aggregators,
-                    vec!["https://a.example", "https://b.example"]
-                );
-            }
-            _ => panic!("did not parse"),
-        }
-    }
-
-    /// Deriving needs the NMTS key and nothing else — no list, no network, no destination.
-    #[test]
-    fn deriving_needs_no_map_and_no_destination() {
-        match parse(&v(&["--derive"])) {
-            Parsed::Run(a) => {
-                assert_eq!(a.mode, Mode::Derive);
-                assert_eq!(a.wallets, 1);
-                assert!(!a.secrets, "private keys are not the default");
-            }
-            Parsed::Print(msg, _) => panic!("--derive was refused: {msg}"),
-        }
-    }
-
-    #[test]
-    fn a_wallet_count_that_is_not_one_is_refused() {
-        for bad in ["0", "no", "1000"] {
-            assert!(
-                matches!(
-                    parse(&v(&["--derive", "--wallets", bad])),
-                    Parsed::Print(_, 2)
-                ),
-                "--wallets {bad} was accepted"
-            );
-        }
-        match parse(&v(&["--derive", "--ai-accounts", "--depth", "2"])) {
-            Parsed::Run(a) => {
-                assert!(a.ai_accounts);
-                assert_eq!(a.ai_depth, 2);
-            }
-            Parsed::Print(msg, _) => panic!("--ai-accounts was refused: {msg}"),
-        }
-        for bad in ["0", "3", "no"] {
-            assert!(
-                matches!(
-                    parse(&v(&["--derive", "--ai-accounts", "--depth", bad])),
-                    Parsed::Print(_, 2)
-                ),
-                "--depth {bad} was accepted"
-            );
-        }
-        match parse(&v(&["--derive"])) {
-            Parsed::Run(a) => assert!(!a.ai_accounts, "AI accounts' keys are not the default"),
-            Parsed::Print(msg, _) => panic!("--derive was refused: {msg}"),
-        }
-        match parse(&v(&["--derive", "--wallets", "5", "--secrets"])) {
-            Parsed::Run(a) => {
-                assert_eq!(a.wallets, 5);
-                assert!(a.secrets);
-            }
-            _ => panic!("did not parse"),
-        }
-    }
-
-    #[test]
-    fn a_port_that_is_not_a_port_is_refused() {
-        assert!(matches!(
-            parse(&v(&["--gui", "--port", "no"])),
-            Parsed::Print(_, 2)
-        ));
-        assert!(matches!(
-            parse(&v(&["--gui", "--port", "70000"])),
-            Parsed::Print(_, 2)
-        ));
-        match parse(&v(&["--gui", "--port", "8765"])) {
-            Parsed::Run(a) => assert_eq!(a.port, Some(8765)),
-            _ => panic!("did not parse"),
-        }
-    }
-
-    /// The crate names `Cargo.toml` marks as the ones that talk to the network.
-    ///
-    /// ⛔ THE NAME IS READ, NOT WRITTEN HERE. See the marker's own comment in `Cargo.toml`. If
-    ///    nothing is marked this fails rather than returning an empty list: an empty list would
-    ///    make the search below find no files, and a found set of nothing compared against a
-    ///    table of two would look like an ordinary red — but a found set of nothing compared
-    ///    against a table someone had emptied at the same time would look like health.
-    fn crates_that_talk_to_the_network(cargo_toml: &std::path::Path) -> Vec<String> {
-        const MARKER: &str = "@opens-sockets";
-        let text = std::fs::read_to_string(cargo_toml).expect("read Cargo.toml");
-        let mut names: Vec<String> = Vec::new();
-        let mut marked = false;
-        for line in text.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            if line.starts_with('#') {
-                marked |= line.contains(MARKER);
-                continue;
-            }
-            if !marked {
-                continue;
-            }
-            marked = false;
-            let key = line.split_once('=').map_or("", |(k, _)| k.trim());
-            assert!(
-                !key.is_empty()
-                    && key
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-                "the {MARKER} marker is not sitting on a dependency line — it points at: {line}"
-            );
-            // A dependency written with a dash is spelled with an underscore in Rust source.
-            names.push(key.replace('-', "_"));
-        }
-        assert!(
-            !marked,
-            "a {MARKER} marker in Cargo.toml has no dependency under it"
-        );
-        assert!(
-            !names.is_empty(),
-            "no dependency in Cargo.toml carries the {MARKER} marker, so the test below has no \
-             name to search the source for"
-        );
-        names
-    }
-
-    /// ⛔ EVERY PART OF THIS PROGRAM THAT OPENS A SOCKET IS NAMED IN THE HELP.
-    ///
-    /// The help used to end its "what it needs" paragraph with *"Neither is ever sent anywhere"*.
-    /// That sentence was true about the two things it named — the NMTS key and the list — and
-    /// false about the impression it left, because `--find` asks a public Sui node a question
-    /// derived from the NMTS key. A person deciding whether to type `--find` read the reassuring
-    /// sentence and had nowhere else to look; the README's correcting paragraph is not in the
-    /// terminal.
-    ///
-    /// So the rule is not "do not write that sentence" — anyone can reword their way past a banned
-    /// phrase. It is: **the set of source files that call the HTTP client must equal the set the
-    /// help describes.** Adding a third destination turns this red until both the table below and
-    /// the help have been told about it.
-    ///
-    /// ⚠ Which files those are is decided by two things this test no longer writes down itself:
-    ///   the client crate's NAME, which comes from the `@opens-sockets` marker in `Cargo.toml`,
-    ///   and the three ways a Rust file can name a crate — a path through it, an import of it, and
-    ///   an import that renames it, including inside a brace group. The
-    ///   version before this one searched for one hard-coded spelling, the crate's name followed
-    ///   by two colons. A file that imported the same crate under a different name and then called
-    ///   it by that other name reached the network without ever containing the thing being
-    ///   searched for: invisible here, the found set still equal to the table, and the help green
-    ///   while a third destination existed. Measured — with the old search that file passed.
-    ///
-    /// ⚠ THE CLIENT CRATE IS NOT SPELLED ANYWHERE IN THIS FILE, and that is deliberate. This is
-    ///   the third gate in this repository to learn that a test which reads source code must think
-    ///   about ITSELF first: written out, the name in a sentence like the one above is indexed by
-    ///   this very search, and the test reports the file it lives in as a thing that opens sockets.
-    #[test]
-    fn every_part_of_this_program_that_opens_a_socket_is_named_in_the_help() {
-        // file stem → the phrase in the help that describes what it contacts.
-        const NAMED: [(&str, &str); 2] =
-            [("source", "Walrus aggregator"), ("discover", "Sui node")];
-        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let clients = crates_that_talk_to_the_network(&crate_dir.join("Cargo.toml"));
-        // The three ways a file can name a crate: a path through it, an import of it, and an
-        // import that renames it. Built here from the name that was just read, so no spelling of
-        // the client is written in this file at all — which is also why this test cannot match its
-        // own search the way an ordinary needle would.
-        //
-        // ⚠ The third form is not a duplicate of the second. An import group puts the rename
-        //   inside braces — `use {std::time::Duration, name as web};` — and that line contains
-        //   neither a path through the crate nor an import beginning with its name. Measured with
-        //   only the first two forms: a module written that way called the network from a file
-        //   this test judged and reported as clean, and the run was green.
-        let needles: Vec<String> = clients
-            .iter()
-            .flat_map(|c| [format!("{c}::"), format!("use {c}"), format!("{c} as ")])
-            .collect();
-        let mut judged = 0usize;
-        let mut opens_a_socket: Vec<String> = Vec::new();
-        let mut stack = vec![crate_dir.join("src")];
-        while let Some(d) = stack.pop() {
-            for entry in std::fs::read_dir(&d).expect("read src") {
-                let path = entry.expect("entry").path();
-                if path.is_dir() {
-                    stack.push(path);
-                    continue;
-                }
-                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                    continue;
-                }
-                let text = std::fs::read_to_string(&path).expect("read");
-                judged += 1;
-                if needles.iter().any(|n| text.contains(n.as_str())) {
-                    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                    opens_a_socket.push(stem.to_string());
-                }
-            }
-        }
-        println!(
-            "{judged} source files judged against {} network crate name(s): {}",
-            clients.len(),
-            clients.join(", ")
-        );
-        // ⚠ A floor, because a search that reads nothing agrees with everything. Set below what
-        //   the crate holds today, so growth is free and a walk that stops walking is not.
-        assert!(
-            judged >= 8,
-            "only {judged} source files were read — this test walked less of src/ than the crate \
-             has, so its answer is about nothing"
-        );
-        opens_a_socket.sort();
-        let mut expected: Vec<String> = NAMED.iter().map(|(f, _)| (*f).to_string()).collect();
-        expected.sort();
-        assert_eq!(
-            opens_a_socket, expected,
-            "a source file that talks to the network is not in this test's table — add it here \
-             AND say in the help what it contacts"
-        );
-        // ⚠ THE PHRASE MUST BE INSIDE THE OUTBOUND BLOCK, not merely somewhere in the help
-        //   (learned while writing this: "Sui node" also appears in the `--rpc` option line, so
-        //   the first version of this check stayed green with the sentence deleted).
-        let start = USAGE
-            .find("WHAT GOES OUT")
-            .expect("the help lost its outbound section");
-        let block = &USAGE[start..];
-        let block = match block.find("\n\nOPTIONS") {
-            Some(end) => &block[..end],
-            None => block,
-        };
-        for (file, phrase) in NAMED {
-            assert!(
-                block.contains(phrase),
-                "{file}.rs opens a socket and WHAT GOES OUT never says so: \"{phrase}\" is missing"
-            );
-        }
-    }
-}
+#[path = "args_tests.rs"]
+mod tests;
