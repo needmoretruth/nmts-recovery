@@ -639,7 +639,11 @@ pub(crate) fn parse_account_code(raw: &str, lang: Lang) -> Result<AccountCode, S
     if trimmed.is_empty() {
         return Err(msg::CODE_EMPTY.get(lang).to_string());
     }
-    AccountCode::parse(trimmed).map_err(|_| msg::CODE_MALFORMED.get(lang).to_string())
+    // The key or its 15-word recovery phrase — the same 20 bytes in two spellings.
+    nmts_crypto::parse_key_or_phrase(trimmed).map_err(|e| match e {
+        nmts_crypto::PhraseError::Code(_) => msg::CODE_MALFORMED.get(lang).to_string(),
+        _ => msg::PHRASE_MALFORMED.get(lang).to_string(),
+    })
 }
 
 fn prompt_for_code(lang: Lang) -> Result<Zeroizing<String>, String> {

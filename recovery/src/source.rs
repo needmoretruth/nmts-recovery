@@ -49,9 +49,16 @@ const LENGTH_SLACK: u64 = 4096;
 /// to end with *"the real fix is a field in the next list version"*, and that is the field. When it
 /// is there, [`aggregators_for_chain`] puts the right endpoint first and the guessing stops. The
 /// order below is what happens when it is not.
-pub const DEFAULT_AGGREGATORS: [&str; 2] = [
+/// ⭐ 2026-09-22 — a SECOND endpoint per chain, from the canonical operator registry
+/// (<https://docs.wal.app/operators.json>), each probed `GET /v1/api` → 200 the same day. One
+/// endpoint per chain meant "that host is down" and "the blob is gone" were the same outcome, which
+/// is the worst thing this program can get wrong. The chain-named host of each pair stays FIRST, so
+/// [`aggregators_for_chain`]'s preference still puts the right chain in front.
+pub const DEFAULT_AGGREGATORS: [&str; 4] = [
     "https://aggregator.walrus-mainnet.walrus.space",
     "https://aggregator.walrus-testnet.walrus.space",
+    "https://sui-walrus-mainnet-aggregator.bwarelabs.com",
+    "https://walrus-testnet-aggregator.nodeinfra.com",
 ];
 
 /// Which endpoints a run may read from, and which the list asked for but did not get.
@@ -458,7 +465,11 @@ mod tests {
             Some("https://someone-elses.example")
         );
         assert_eq!(
-            out.iter().filter(|e| e.contains("walrus-mainnet")).count(),
+            out.iter()
+                .filter(
+                    |e| e.trim_end_matches('/') == "https://aggregator.walrus-mainnet.walrus.space"
+                )
+                .count(),
             1,
             "a recorded endpoint that is already a default must not be listed twice: {out:?}"
         );

@@ -113,6 +113,9 @@ after the bytes arrive is identical.
 **The NMTS key is never an argument.** It is typed when the program asks, or read from
 `--code-file`. An argument would land in your shell history and be visible to other users.
 
+Wherever the program asks for the NMTS key, its **15-word recovery phrase** works too, in English
+or Korean words: it is the same key written differently (the format's §1.8).
+
 ## When you have no list file
 
 If the account switched the storage-network copy on, a copy of the recovery list is on Walrus and

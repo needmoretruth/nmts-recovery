@@ -215,6 +215,10 @@ fn refusal(why: &OpenerRefusal, lang: Lang) -> String {
         OpenerRefusal::SlotKind { kind } => msg::WALLET_SLOT_KIND
             .get(lang)
             .replace("{kind}", &format!("0x{kind:02x}")),
+        OpenerRefusal::PrfLength { got } => msg::WALLET_PRF_LENGTH
+            .get(lang)
+            .replace("{expected}", &opener::PASSKEY_PRF_LEN.to_string())
+            .replace("{got}", &got.to_string()),
         OpenerRefusal::DoesNotOpen => msg::WALLET_SLOT_DOES_NOT_OPEN.get(lang).into(),
     }
 }
@@ -267,7 +271,7 @@ mod tests {
     }
 
     /// ⛔ EVERY REASON READS DIFFERENTLY, in both languages. The mapping above exists so that a
-    ///    person who cannot use their wallet learns which of eight different things happened; a
+    ///    person who cannot use their wallet learns which of these things happened; a
     ///    catch-all arm, or one message pasted twice, puts that back to a shrug — and this is the
     ///    only place that would notice.
     #[test]
@@ -289,6 +293,7 @@ mod tests {
             OpenerRefusal::SlotLength { got: 12 },
             OpenerRefusal::SlotVersion { version: 0x02 },
             OpenerRefusal::SlotKind { kind: 0x09 },
+            OpenerRefusal::PrfLength { got: 31 },
             OpenerRefusal::DoesNotOpen,
         ];
         for lang in [Lang::En, Lang::Ko] {

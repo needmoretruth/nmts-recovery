@@ -261,7 +261,8 @@ OPENING WITH A WALLET
 
 THE NMTS KEY IS NEVER AN ARGUMENT. It is typed when this program asks, or read
 from --code-file. An argument would land in your shell history and be visible to every
-other user on the machine.
+other user on the machine. Wherever the key is asked for, its 15-word recovery phrase
+(English or Korean words) works too: it is the same key.
 ";
 
 /// Parse `argv` (without the program name).

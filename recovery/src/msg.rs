@@ -27,8 +27,8 @@ impl Line {
 }
 
 pub const ASK_CODE: Line = Line(
-    "NMTS key (32 letters and digits, dashes optional): ",
-    "NMTS 키 (글자와 숫자 32개, 붙임표는 있어도 없어도 됩니다): ",
+    "NMTS key (32 letters and digits, dashes optional) or its 15-word recovery phrase: ",
+    "NMTS 키 (글자와 숫자 32개, 붙임표는 있어도 없어도 됩니다) 또는 15단어 복구 구문: ",
 );
 
 pub const ECHO_WARNING: Line = Line(
@@ -43,6 +43,13 @@ pub const CODE_MALFORMED: Line = Line(
      check symbol, so a single typo is caught here rather than later.",
     "올바른 NMTS 키가 아닙니다. 잘못 입력한 글자가 있는지 확인하십시오. 마지막 글자가 검사용이라 \
      한 글자만 틀려도 여기서 걸립니다.",
+);
+
+pub const PHRASE_MALFORMED: Line = Line(
+    "That is not a valid recovery phrase. It has 15 words from one word list, in order; check \
+     that none is missing, misspelled or swapped. A 12- or 24-word phrase belongs to a wallet.",
+    "올바른 복구 구문이 아닙니다. 한 단어 목록의 단어 15개가 순서대로 있어야 합니다. 빠지거나 \
+     철자가 틀리거나 순서가 바뀐 단어가 없는지 확인하십시오. 12·24단어 구문은 지갑의 것입니다.",
 );
 
 pub const CODE_WRONG_ACCOUNT: Line = Line(
@@ -487,6 +494,16 @@ pub const WALLET_SLOT_VERSION: Line = Line(
      nmts-recovery를 쓰십시오. 아무것도 열지 않았습니다.",
 );
 
+/// Facts: a passkey's PRF result of the wrong length. Unreachable from this program, which opens
+/// slots with a wallet signature only; it is here because the engine can say it and every reason
+/// gets its own sentence.
+pub const WALLET_PRF_LENGTH: Line = Line(
+    "A passkey result must be {expected} bytes, got {got}. This program opens a slot with a wallet \
+     signature, not a passkey.",
+    "패스키 결과는 {expected}바이트여야 하는데 {got}바이트입니다. 이 프로그램은 패스키가 아니라 지갑 \
+     서명으로 슬롯을 엽니다.",
+);
+
 /// Facts: the slot's second byte names a kind this layer has not reserved (`{kind}`).
 /// Reachable only from a slot this program did not write.
 pub const WALLET_SLOT_KIND: Line = Line(
@@ -539,6 +556,7 @@ pub const ALL_LINES: &[Line] = &[
     ECHO_WARNING,
     CODE_EMPTY,
     CODE_MALFORMED,
+    PHRASE_MALFORMED,
     CODE_WRONG_ACCOUNT,
     MAP_NOT_A_MAP,
     KIT_NOT_IN_THE_BROWSER,
@@ -610,6 +628,7 @@ pub const ALL_LINES: &[Line] = &[
     WALLET_SLOT_LENGTH,
     WALLET_SLOT_VERSION,
     WALLET_SLOT_KIND,
+    WALLET_PRF_LENGTH,
     WALLET_SLOT_DOES_NOT_OPEN,
     WALLET_ADDRESS_NOT_CANONICAL,
     WALLET_ACCOUNT_ZERO,
