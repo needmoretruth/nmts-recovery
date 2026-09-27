@@ -1,5 +1,5 @@
-//! Where the ciphertext comes from: a public Walrus aggregator, or a directory of files somebody
-//! already fetched.
+//! Where the ciphertext comes from: a public Walrus aggregator, the storage companies keeping a
+//! Filecoin piece (`filecoin.rs`), or a directory of files somebody already fetched.
 //!
 //! # The two sources are not a convenience pair
 //! The network source is what makes the tool usable. The directory source is what makes it
@@ -27,6 +27,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use nmts_crypto::manifest::RecoveryManifest;
+
+use crate::filecoin::{self, Piece};
 
 /// NCF-3 §4.1: the fixed stream header.
 const HEADER_LEN: u64 = 72;
@@ -164,12 +166,12 @@ pub fn endpoints_for(
     Endpoints { use_now, held_back }
 }
 
-/// The storage network name this build knows how to fetch from.
+/// The storage network names this build knows how to fetch from: Walrus, and Filecoin (NRM-5).
 ///
 /// A list may name a network that did not exist when this build was made. Refusing by name is what
 /// keeps such a part from being fetched from the wrong network's aggregator and failing later as
 /// "damaged" — see `Part::network_name` in the crypto crate for why the field is a word.
-pub const KNOWN_NETWORK: &str = "walrus";
+pub const KNOWN_NETWORKS: [&str; 2] = ["walrus", nmts_crypto::manifest::NETWORK_FILECOIN];
 
 /// Which bytes are wanted.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -190,6 +192,8 @@ pub enum BlobRef {
         /// The patch's identifier within it.
         identifier: String,
     },
+    /// A Filecoin piece, fetched from the companies keeping it rather than from an aggregator.
+    Piece(Piece),
 }
 
 impl BlobRef {
@@ -198,6 +202,30 @@ impl BlobRef {
         match self {
             BlobRef::Whole(id) | BlobRef::Patch(id) => id,
             BlobRef::InQuilt { identifier, .. } => identifier,
+            BlobRef::Piece(p) => &p.cid,
+        }
+    }
+
+    /// The network this reference is read from, as the list names it.
+    pub fn network(&self) -> &'static str {
+        match self {
+            BlobRef::Piece(_) => KNOWN_NETWORKS[1],
+            _ => KNOWN_NETWORKS[0],
+        }
+    }
+
+    /// The command that fetches it by hand: from `base` for Walrus, and from each company in turn
+    /// for a Filecoin piece — the same addresses, in the same order, this program would try first.
+    pub fn fetch_command(&self, base: &str) -> String {
+        let curl = |url: &str| format!("curl -fL -o {} {url}", self.file_name());
+        match self {
+            BlobRef::Piece(p) => p
+                .copies
+                .iter()
+                .map(|c| curl(&c.retrieval_url))
+                .collect::<Vec<_>>()
+                .join(" || "),
+            _ => curl(&format!("{base}{}", self.url_path())),
         }
     }
 
@@ -214,6 +242,8 @@ impl BlobRef {
                 urlencode(quilt_id),
                 urlencode(identifier)
             ),
+            // The path on a company, not on an aggregator: see `fetch_command`.
+            BlobRef::Piece(p) => format!("/piece/{}", urlencode(&p.cid)),
         }
     }
 
@@ -231,6 +261,8 @@ impl BlobRef {
             // global, an identifier is only meaningful inside one quilt), and a `--blobs-dir`
             // holding both must not have one silently satisfy a request for the other.
             BlobRef::InQuilt { .. } => "inquilt-",
+            // Named by the PieceCID, which is the piece's own name wherever it is kept.
+            BlobRef::Piece(_) => "piece-",
         };
         let safe: String = self
             .id()
@@ -281,6 +313,14 @@ pub enum SourceError {
     ///    Re-fetching after the caller has already begun writing would restart a part halfway
     ///    through and quietly concatenate two attempts.
     Consumer(String),
+    /// None of the companies keeping a Filecoin piece returned it — recorded addresses and current
+    /// ones alike. Its own variant because the sentence a person reads counts the companies.
+    NoCopy {
+        /// How many different companies keep the piece.
+        companies: usize,
+        /// Every attempt's reason.
+        tried: String,
+    },
 }
 
 /// A place bytes can be read from.
@@ -303,6 +343,7 @@ pub trait BlobSource {
 pub struct HttpSource {
     endpoints: Vec<String>,
     agent: ureq::Agent,
+    filecoin: filecoin::Web,
 }
 
 impl HttpSource {
@@ -319,7 +360,11 @@ impl HttpSource {
             .timeout_global(Some(Duration::from_secs(3600)))
             .build()
             .into();
-        Self { endpoints, agent }
+        Self {
+            endpoints,
+            agent,
+            filecoin: filecoin::Web::new(),
+        }
     }
 
     /// The endpoints in use — printed in the fetch plan so the URLs a person copies are the URLs
@@ -337,6 +382,9 @@ impl BlobSource for HttpSource {
         consume: &mut dyn FnMut(&mut dyn Read) -> Result<(), String>,
     ) -> Result<(), SourceError> {
         let cap = expected_stream_len(plaintext_len) + LENGTH_SLACK;
+        if let BlobRef::Piece(piece) = r {
+            return filecoin::fetch_piece(&self.filecoin, piece, cap, consume);
+        }
         // Every endpoint's failure is kept. A recovery that says "could not fetch" without saying
         // that one aggregator answered 404 and the other refused the connection sends a person
         // looking at their own network for an hour.
@@ -592,8 +640,41 @@ mod tests {
             .expect_err("nothing is there");
         match err {
             SourceError::Unavailable(m) => assert!(m.contains("blob-xyz.bin"), "{m}"),
-            SourceError::Consumer(m) => panic!("a missing file is not a rejection: {m}"),
+            _ => panic!("a missing file is neither a rejection nor a Filecoin failure"),
         }
+    }
+
+    /// A Filecoin piece is found in a blob folder by its PieceCID, and the hand-fetch command tries
+    /// its companies in the list's order — the file it writes is the file the folder is read for.
+    #[test]
+    fn a_piece_is_named_by_its_cid_and_fetched_from_each_company_in_turn() {
+        let copy = |host: &str| nmts_crypto::manifest::FilecoinCopy {
+            provider_id: "1".into(),
+            data_set_id: "2".into(),
+            piece_id: "3".into(),
+            retrieval_url: format!("https://{host}/piece/bafkzcibxyz"),
+        };
+        let piece = BlobRef::Piece(Piece {
+            cid: "bafkzcibxyz".into(),
+            chain: "mainnet".into(),
+            copies: vec![copy("a.example"), copy("b.example")],
+        });
+        assert_eq!(piece.file_name(), "piece-bafkzcibxyz.bin");
+        assert_eq!(piece.network(), "filecoin");
+        assert_eq!(
+            piece.fetch_command("https://ignored.example"),
+            "curl -fL -o piece-bafkzcibxyz.bin https://a.example/piece/bafkzcibxyz || \
+             curl -fL -o piece-bafkzcibxyz.bin https://b.example/piece/bafkzcibxyz"
+        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("piece-bafkzcibxyz.bin"), b"sealed").expect("write");
+        let mut got = Vec::new();
+        let served = DirSource::new(dir.path()).open(&piece, 6, &mut |r| {
+            r.read_to_end(&mut got)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        });
+        assert!(served.is_ok() && got == b"sealed");
     }
 
     /// ⛔ The distinction the failover depends on: bytes that arrived and were rejected must not

@@ -104,6 +104,9 @@ pub struct Args {
     pub wallets: u32,
     /// Whether [`Mode::Derive`] also prints private keys.
     pub secrets: bool,
+    /// The EVM wallet whose private key [`Mode::Derive`] prints (`--export-evm-key N`), behind its
+    /// own warning — read the way `secrets` is, and ignored outside `--derive` the way it is.
+    pub export_evm_key: Option<u32>,
     /// Whether [`Mode::Derive`] also prints the AI accounts' NMTS keys (NCF-3 §1.5).
     pub ai_accounts: bool,
     /// How many levels of AI accounts `--ai-accounts` walks. 1 = three keys, 2 = twelve.
@@ -179,6 +182,9 @@ WHAT GOES OUT
   Your NMTS key never goes out. Keys are derived from it here and it is not part
   of any request this program makes.
   Every restore asks a public Walrus aggregator for blobs by their public ids.
+  A file kept on Filecoin (NMTS Heavy) is asked for by its piece id from the
+  storage companies the list names. Only when all of them fail does the program
+  ask a public Filecoin node (glif) for each company's current address.
   --print-fetch-plan prints those requests so you can make them yourself, and
   --blobs-dir then reads what you fetched, so the program opens no socket at all.
   --find asks a public Sui node which blobs a wallet owns, and the wallet address and
@@ -224,12 +230,16 @@ OPTIONS
   --write-gui FILE     write the control page out as a file and stop, so you can
                        read it. Opening that file on its own does nothing.
   --derive             print what your NMTS key derives — the account id, its
-                       fingerprint, your public code, and your wallet addresses.
+                       fingerprint, your public code, your wallet addresses, and
+                       the EVM addresses that pay for NMTS Heavy on Filecoin.
                        No list, no network, nothing written.
   --wallets N          how many wallets --derive walks, and how many --find looks
                        under. Default: 1.
   --secrets            with --derive, also print the wallet private keys. Anyone
                        who reads them can spend from those wallets.
+  --export-evm-key N   with --derive, also print the private key of EVM wallet N,
+                       for an Ethereum-style wallet app. Anyone who reads it can
+                       spend what that wallet holds on Filecoin.
   --ai-accounts        with --derive, also print the NMTS keys of the AI accounts
                        your key makes. Each one is a full NMTS key: whoever reads
                        it is that sub-account.
@@ -286,6 +296,7 @@ pub fn parse(argv: &[String]) -> Parsed {
         gui_out: None,
         wallets: DEFAULT_WALLETS,
         secrets: false,
+        export_evm_key: None,
         ai_accounts: false,
         ai_depth: DEFAULT_AI_DEPTH,
         wallet_message_address: None,
@@ -367,6 +378,22 @@ pub fn parse(argv: &[String]) -> Parsed {
                 a.secrets = true;
                 1
             }
+            // Any number: the derivation has a wallet for every N (NCF-3 §1.9).
+            "--export-evm-key" => match value("--export-evm-key") {
+                Ok(v) => match v.parse::<u32>() {
+                    Ok(n) => {
+                        a.export_evm_key = Some(n);
+                        2
+                    }
+                    _ => {
+                        return Parsed::Print(
+                            format!("--export-evm-key does not understand \"{v}\"."),
+                            2,
+                        )
+                    }
+                },
+                Err(e) => return Parsed::Print(e, 2),
+            },
             "--overwrite" => {
                 a.overwrite = true;
                 1

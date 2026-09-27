@@ -18,7 +18,7 @@ use std::process::Command;
 
 use nmts_crypto::codes::AccountCode;
 use nmts_crypto::framing::StreamEncryptor;
-use nmts_crypto::manifest::{Item, Meta, Part, Quilt, RecoveryManifest};
+use nmts_crypto::manifest::{FilecoinCopy, Item, Meta, Part, Quilt, RecoveryManifest};
 use nmts_crypto::{b64, kdf, wrap};
 
 /// How a synthesised file's last part is padded, and whether the list admits it.
@@ -127,6 +127,8 @@ impl Fixture {
                     .filter(|_| padding.is_some_and(|p| p.recorded))
                     .map(|p| slice.len() as u64 + p),
                 network: Some("walrus".into()),
+                chain: None,
+                copies: None,
                 sui_object_id: None,
             });
         }
@@ -151,6 +153,45 @@ impl Fixture {
             parts: manifest_parts,
             quilt,
         }
+    }
+
+    /// The same file stored as NMTS Heavy: every part a Filecoin piece on Calibration, kept by one
+    /// company per entry of `hosts` (`https://host[:port]`), and written to the blob folder under the
+    /// name `--blobs-dir` looks for — `piece-<PieceCID>.bin`.
+    pub fn add_heavy_file(
+        &self,
+        name: &str,
+        path: &str,
+        plaintext: &[u8],
+        parts: u32,
+        hosts: &[&str],
+    ) -> Item {
+        let mut item = self.add_file(name, path, plaintext, parts, false);
+        for (index, part) in item.parts.iter_mut().enumerate() {
+            let walrus_id = part.blob_id.clone().expect("a blob id");
+            let cid = piece_cid(&format!("{name}-{index}"));
+            fs::rename(
+                self.path("blobs").join(format!("blob-{walrus_id}.bin")),
+                self.path("blobs").join(format!("piece-{cid}.bin")),
+            )
+            .expect("rename to the piece's name");
+            part.network = Some("filecoin".into());
+            part.chain = Some("calibration".into());
+            part.copies = Some(
+                hosts
+                    .iter()
+                    .enumerate()
+                    .map(|(company, host)| FilecoinCopy {
+                        provider_id: (company + 1).to_string(),
+                        data_set_id: "1".into(),
+                        piece_id: index.to_string(),
+                        retrieval_url: format!("{host}/piece/{cid}"),
+                    })
+                    .collect(),
+            );
+            part.blob_id = Some(cid);
+        }
+        item
     }
 
     /// Seal `items` into a `.nmtsmap` beside the blobs, with NO self-description block.
@@ -241,6 +282,17 @@ impl Fixture {
             self.path("blobs").to_str().expect("utf8 path"),
         ])
     }
+}
+
+/// A string shaped like a PieceCIDv2 (`bafkzcib` + lowercase base32), different per `seed`. It names
+/// nothing on any network — the tests serve these pieces from a folder.
+pub fn piece_cid(seed: &str) -> String {
+    const ALPHABET: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
+    let tail: String = sha256(seed.as_bytes())
+        .iter()
+        .map(|b| ALPHABET[usize::from(b % 32)] as char)
+        .collect();
+    format!("bafkzcib{tail}")
 }
 
 pub fn sha256(bytes: &[u8]) -> [u8; 32] {

@@ -19,8 +19,8 @@ NMTS는 서비스 요금을 받지 않습니다. 저장은 본인 지갑에서 W
 
 > **이야기를 나누는 곳: [디스코드](https://discord.gg/pcmRkVmVZk).** 영어와 한국어 둘 다 읽습니다.
 
-**어느 순간에도 NMTS 서버에 접속하지 않습니다.** 공개 Walrus 애그리게이터를, 또는 직접 받아 둔
-블롭 폴더를 읽어 파일을 도로 씁니다. 자체 암호는 하나도 더하지 않습니다. 모든 키 파생과 모든
+**어느 순간에도 NMTS 서버에 접속하지 않습니다.** 공개 Walrus 애그리게이터를 — Filecoin에 둔 파일(NMTS
+Heavy)이면 목록이 적은 저장 회사를 — 또는 직접 받아 둔 블롭 폴더를 읽어 파일을 도로 씁니다. 자체 암호는 하나도 더하지 않습니다. 모든 키 파생과 모든
 복호화는 `crypto/`를 부르는 것이고, 그것은 NMTS 브라우저 코드가 WebAssembly로 컴파일하는 것과
 같은 엔진입니다. 형식은 NCF-3이고, 그것을 판정하는 적합성 벡터와 함께
 [nmts-crypto](https://github.com/needmoretruth/nmts-crypto)에 적혀 있습니다.
@@ -100,9 +100,10 @@ nmts-recovery --map FILE --print-fetch-plan   # 정확한 URL을 curl 명령으�
 | `--blobs-dir DIR` | 네트워크 대신 디렉터리에서 블롭을 읽습니다. |
 | `--only TEXT` | 경로나 이름에 TEXT가 든 파일만 되찾습니다. |
 | `--overwrite` | 이미 있는 파일을 바꿉니다. 기본은 끔. |
-| `--derive` | NMTS 키가 파생하는 것을 찍고 멈춥니다. 목록 없음, 네트워크 없음. |
+| `--derive` | NMTS 키가 파생하는 것을 — NMTS Heavy 값을 내는 EVM 주소까지 — 찍고 멈춥니다. 목록 없음, 네트워크 없음. |
 | `--wallets N` | `--derive`가 걷고 `--find`가 찾아볼 지갑 수. 기본 1. |
 | `--secrets` | `--derive`와 함께, 지갑 개인 키도 찍습니다. |
+| `--export-evm-key N` | `--derive`와 함께, EVM 지갑 N의 개인 키를 찍습니다. 이더리움 계열 지갑 앱에 넣을 수 있습니다. |
 | `--lang en\|ko` | 메시지 언어. 기본 영어. 자동 감지는 없습니다. |
 
 **NMTS 키는 절대 인자가 아닙니다.** 프로그램이 물을 때 치거나 `--code-file`에서 읽습니다. 인자로
@@ -193,6 +194,7 @@ nmts-recovery --gui
 ```sh
 nmts-recovery --derive              # 계정 id, 지문, 공개 코드, 지갑 주소
 nmts-recovery --derive --secrets    # 같은 것에 더해 지갑 개인 키. 경고 뒤에
+nmts-recovery --derive --export-evm-key 0   # EVM 지갑 0(NMTS Heavy)의 개인 키. 경고 뒤에
 ```
 
 파생은 NMTS 자신이 쓰는 라이브러리에서 뽑은 고정값과 대조합니다(`recovery/src/derive.rs`).
@@ -207,6 +209,8 @@ GET https://<aggregator>/v1/blobs/<blob id>                       --blobs-dir가
 GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<patch id>
 POST https://<sui node>/     파생한 지갑에 대한 suix_getOwnedObjects     --find만
 GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<derived patch id>      --find만
+GET https://<저장 회사>/piece/<piece id>                            Filecoin(NMTS Heavy) 조각, 목록의 회사 순서대로
+POST https://api.node.glif.io/rpc/v1   저장 회사 등록부에 eth_call         적힌 회사가 모두 실패했을 때만
 ```
 
 공개 블롭을 공개 id로 받으며, 모든 응답은 목록이 적은 암호문 길이로 제한됩니다. `--find`의 두
@@ -214,6 +218,12 @@ GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<derived patch id>      --fi
 서버에 알립니다. 키 자체는 보내지 않고 되짚을 수도 없습니다. `--rpc`로 내 노드를 대고,
 `--map FILE`은 조회 자체를 피합니다. 목록 안에 적힌 주소는 `--use-recorded-aggregators`로 시키지
 않는 한 접속하지 않습니다.
+
+Filecoin 조각은 다릅니다. 모든 조각을 내주는 공개 서비스가 없어서, 목록이 그 조각을 보관한 저장 회사를
+적고 프로그램은 그 회사들에 조각 id로 요청합니다. 모두 실패하면 공개 Filecoin 노드(glif · 테스트넷
+목록이면 Calibration 노드)에 체인의 등록부에서 각 회사의 지금 주소를 묻고 그리로 다시 시도합니다. 두
+요청 모두 그 회사나 노드에 누군가 지금 이 조각을 받고 있다는 것을 알립니다. `--print-fetch-plan`은 이
+요청들도 찍고, `--blobs-dir`은 직접 받아 둔 조각(`piece-<piece id>.bin`)을 읽습니다.
 
 ## 파일이 돌아왔다고 말하기 전에 무엇을 확인하는가
 

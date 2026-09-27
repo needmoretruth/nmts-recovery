@@ -99,6 +99,8 @@ fn a_real_blob_on_walrus_comes_back_as_the_original_file() {
                 plaintext_len: plaintext.len() as u64,
                 padded_len: None,
                 network: Some("walrus".into()),
+                chain: None,
+                copies: None,
                 sui_object_id: None,
             }],
             quilt: None,

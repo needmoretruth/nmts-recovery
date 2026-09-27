@@ -43,8 +43,10 @@
 #![forbid(unsafe_code)]
 
 mod args;
+mod dates;
 mod derive;
 mod discover;
+mod filecoin;
 mod gui;
 mod kitfile;
 mod mapfile;
@@ -138,6 +140,9 @@ fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
             w.address
         );
     }
+    for w in &d.wallets {
+        println!("  {}", derive::evm_line(w, lang));
+    }
     if a.secrets {
         // ⛔ The warning comes BEFORE the keys, not after. A person scrolling back to read a
         //    caution that was printed underneath the thing it cautions about has already read it.
@@ -158,6 +163,13 @@ fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
         }
     } else {
         println!("\n{}", msg::DERIVE_PUBLIC_ONLY.get(lang));
+    }
+    // ⛔ The warning first, then the key — the order the Sui keys' warning is printed in.
+    if let Some(i) = a.export_evm_key {
+        let warning = msg::EVM_KEY_WARNING
+            .get(lang)
+            .replace("{i}", &i.to_string());
+        println!("\n{warning}\n  {}", *derive::evm_private_key_hex(&keys, i));
     }
     if a.ai_accounts {
         // ⛔ The warning comes BEFORE the codes, for the reason the private keys' does.
@@ -434,10 +446,11 @@ fn print_summary(manifest: &RecoveryManifest, planned: &[restore::PlannedItem<'_
     for p in planned {
         let path = p.item.path.trim_end_matches('/');
         println!(
-            "  {}/{}  {}",
+            "  {}/{}  {}  {}",
             path,
             p.item.name,
-            msg::human_bytes(p.item.size)
+            msg::human_bytes(p.item.size),
+            restore::networks_of(p.item)
         );
         if let Some(original) = &p.renamed_from {
             println!("      ← {original}");
@@ -516,12 +529,8 @@ fn print_fetch_plan(planned: &[restore::PlannedItem<'_>], endpoints: &[String], 
             }
         };
         for (blob, _) in refs {
-            println!(
-                "  curl -fL -o {} {}{}",
-                blob.file_name(),
-                base,
-                blob.url_path()
-            );
+            let network = msg::network_display(blob.network());
+            println!("  {}  # {network}", blob.fetch_command(base));
         }
     }
 }

@@ -36,6 +36,7 @@
 //! request same-origin.
 
 pub mod http;
+mod rows;
 
 use std::io::Write;
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
@@ -56,6 +57,7 @@ use crate::mapfile;
 use crate::msg;
 use crate::restore;
 use crate::source::{BlobSource, DirSource, HttpSource};
+use rows::ItemView;
 
 /// The page, compiled in. One copy of it exists: this file is what the repository ships, what
 /// `--write-gui` writes out, and what the server serves — so no reader can be looking at a version
@@ -99,14 +101,6 @@ impl Phase {
             Phase::Finished => "finished",
         }
     }
-}
-
-/// One row in the page's list.
-struct ItemView {
-    name: String,
-    path: String,
-    size: u64,
-    parts: usize,
 }
 
 /// How a running restore is going.
@@ -182,12 +176,7 @@ impl Session {
             "seq": self.seq,
             "generatedAt": self.generated_at,
             "out": self.out,
-            "items": self.items.iter().map(|i| json!({
-                "name": i.name,
-                "path": i.path,
-                "size": i.size,
-                "parts": i.parts,
-            })).collect::<Vec<_>>(),
+            "items": self.items.iter().map(ItemView::to_json).collect::<Vec<_>>(),
             "job": {
                 "total": self.job.total,
                 "done": self.job.done,
@@ -388,16 +377,7 @@ fn open_map(shared: &Arc<Mutex<Session>>, name: &str, text: &str, a: &Args) {
     println!("{}", msg::GUI_MAP_OPEN.get(lang));
 
     let mut s = session(shared);
-    s.items = manifest
-        .items
-        .iter()
-        .map(|i| ItemView {
-            name: i.name.clone(),
-            path: i.path.clone(),
-            size: i.size,
-            parts: i.parts.len(),
-        })
-        .collect();
+    s.items = manifest.items.iter().map(ItemView::of).collect();
     s.seq = manifest.seq;
     s.generated_at = manifest.generated_at.clone();
     s.manifest = Some(manifest);
@@ -420,16 +400,7 @@ fn seed_from_network(
     name: String,
 ) {
     let mut s = session(shared);
-    s.items = manifest
-        .items
-        .iter()
-        .map(|i| ItemView {
-            name: i.name.clone(),
-            path: i.path.clone(),
-            size: i.size,
-            parts: i.parts.len(),
-        })
-        .collect();
+    s.items = manifest.items.iter().map(ItemView::of).collect();
     s.seq = manifest.seq;
     s.generated_at = manifest.generated_at.clone();
     s.map_name = Some(name);

@@ -113,3 +113,12 @@ fn the_two_languages_are_actually_different_text() {
         assert_ne!(line.0, line.1, "a line was never translated: {}", line.0);
     }
 }
+
+/// The two networks are named as a person reads them, in either language; a name this build does
+/// not know is shown as the list spells it rather than as a guess.
+#[test]
+fn networks_are_named_by_their_own_names() {
+    assert_eq!(network_display("walrus"), "Walrus");
+    assert_eq!(network_display("filecoin"), "Filecoin");
+    assert_eq!(network_display("arweave"), "arweave");
+}

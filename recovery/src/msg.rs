@@ -198,6 +198,23 @@ pub const UNKNOWN_NETWORK: Line = Line(
     "이 버전이 읽을 수 없는 네트워크에 있습니다",
 );
 
+/// Every recorded address and every current one failed for a Filecoin part (NRM-5).
+pub const FILECOIN_NO_COPY: Line = Line(
+    "Filecoin: none of the {n} storage companies returned this part.",
+    "Filecoin: 이 조각을 보관한 저장 회사 {n}곳 모두에서 받지 못했습니다.",
+);
+
+/// A storage network's name as a person reads it. Proper names, the same in both languages — which
+/// is why they are not `Line`s: the check that a line was translated would refuse them. A name this
+/// build does not know is shown as the list spells it.
+pub fn network_display(name: &str) -> &str {
+    match name {
+        "walrus" => "Walrus",
+        "filecoin" => "Filecoin",
+        other => other,
+    }
+}
+
 // ── Looking the list up on the storage network ───────────────────────────────────────────────
 
 pub const FIND_LOOKING: Line = Line(
@@ -364,6 +381,15 @@ pub const DERIVE_FINGERPRINT: Line = Line("Fingerprint", "지문");
 pub const DERIVE_PUBLIC_CODE: Line = Line("Public code", "공개 코드");
 pub const DERIVE_WALLET: Line = Line("Wallet", "지갑");
 pub const DERIVE_SECRET_KEY: Line = Line("Private key", "개인 키");
+pub const DERIVE_EVM_ADDRESS: Line = Line(
+    "EVM address (NMTS Heavy, wallet {i}): {addr}",
+    "EVM 주소(NMTS Heavy · 지갑 {i}): {addr}",
+);
+/// Printed BEFORE the key `--export-evm-key` asks for, as the Sui keys' warning is.
+pub const EVM_KEY_WARNING: Line = Line(
+    "This is the private key of EVM wallet {i}. Anyone holding it can spend what that wallet holds.",
+    "EVM 지갑 {i}의 개인 키입니다. 이 값을 가진 사람은 그 지갑에 있는 것을 쓸 수 있습니다.",
+);
 
 pub const DERIVE_PUBLIC_ONLY: Line = Line(
     "These are public. Add --secrets to also print the wallet private keys.",
@@ -578,6 +604,7 @@ pub const ALL_LINES: &[Line] = &[
     DONE_PARTIAL,
     NO_HASH_NOTE,
     UNKNOWN_NETWORK,
+    FILECOIN_NO_COPY,
     OWN_QUILT_UNKNOWN,
     FIND_LOOKING,
     FIND_FOUND,
@@ -611,6 +638,8 @@ pub const ALL_LINES: &[Line] = &[
     DERIVE_PUBLIC_CODE,
     DERIVE_WALLET,
     DERIVE_SECRET_KEY,
+    DERIVE_EVM_ADDRESS,
+    EVM_KEY_WARNING,
     DERIVE_PUBLIC_ONLY,
     DERIVE_SECRET_WARNING,
     DERIVE_AI_HEAD,

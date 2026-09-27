@@ -27,6 +27,10 @@ use ed25519_dalek::SigningKey;
 use nmts_crypto::kdf::DerivedKeys;
 use nmts_crypto::share;
 use sha2::{Digest as ShaDigest, Sha256};
+use zeroize::Zeroizing;
+
+use crate::args::Lang;
+use crate::msg;
 
 /// Sui's signature-scheme byte for Ed25519. It prefixes the public key before hashing, and the
 /// secret key before bech32-encoding, so an address and a key both say which scheme they are.
@@ -40,6 +44,9 @@ pub struct Wallet {
     pub index: u32,
     /// `0x…` Sui address.
     pub address: String,
+    /// `0x…` EIP-55 address of the EVM wallet with the same number — the one that pays for NMTS
+    /// Heavy on Filecoin (NCF-3 §1.9). Public, like the Sui address.
+    pub evm_address: String,
     /// `suiprivkey1…`, present only when the caller asked for secrets.
     pub secret: Option<String>,
 }
@@ -115,6 +122,7 @@ pub fn from_keys(keys: &DerivedKeys, wallet_count: u32, with_secrets: bool) -> D
             Wallet {
                 index,
                 address: sui_address(&seed),
+                evm_address: evm_address(keys, index),
                 secret: with_secrets.then(|| sui_secret_key(&seed)),
             }
         })
@@ -155,6 +163,37 @@ pub fn sui_address(seed: &[u8; 32]) -> String {
         "0x{}",
         out.iter().map(|b| format!("{b:02x}")).collect::<String>()
     )
+}
+
+/// The EIP-55 address of EVM wallet `index`. The derivation and the address rule are the engine's
+/// (`kdf::evm_*`), held to vectors an independent implementation wrote (`ncf3-evm.json`).
+pub fn evm_address(keys: &DerivedKeys, index: u32) -> String {
+    let key = keys.evm_key_for(index);
+    let address = nmts_crypto::kdf::evm_address_of_key(&key)
+        .expect("a derived EVM key is always a scalar in [1, n - 1]");
+    nmts_crypto::kdf::evm_address_checksummed(&address)
+}
+
+/// The `--derive` line naming EVM wallet `w.index`'s address.
+pub fn evm_line(w: &Wallet, lang: Lang) -> String {
+    msg::DERIVE_EVM_ADDRESS
+        .get(lang)
+        .replace("{i}", &w.index.to_string())
+        .replace("{addr}", &w.evm_address)
+}
+
+/// EVM wallet `index`'s private key as `0x` + 64 hex — the form every EVM wallet imports.
+///
+/// ⛔ Printed only for `--export-evm-key`, after [`msg::EVM_KEY_WARNING`], the way the Sui keys are
+///    printed only for `--secrets`, after theirs. Cleared from memory when the caller drops it.
+pub fn evm_private_key_hex(keys: &DerivedKeys, index: u32) -> Zeroizing<String> {
+    let key = keys.evm_key_for(index);
+    let mut out = Zeroizing::new(String::with_capacity(66));
+    out.push_str("0x");
+    for b in key.iter() {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
 }
 
 /// A wallet seed in the form a Sui wallet imports: bech32 over the flag byte and the 32-byte seed.
@@ -217,6 +256,32 @@ mod tests {
         for (hex, _, secret) in CASES {
             assert_eq!(sui_secret_key(&seed_of(hex)), secret, "seed {hex}");
         }
+    }
+
+    /// ⛔ The EVM wallet a recovery prints is the one the product derives: account `all_zero` of
+    ///    `crypto/tests/vectors/ncf3-evm.json`, written by an independent implementation and checked
+    ///    against viem there. A mismatch would hand somebody an address that is not theirs to fund.
+    #[test]
+    fn the_evm_wallet_matches_the_conformance_vector() {
+        let code = nmts_crypto::codes::AccountCode::from_bytes([0u8; 20]);
+        let keys = nmts_crypto::kdf::derive(&code).expect("derive");
+        let d = from_keys(&keys, 2, false);
+        assert_eq!(
+            d.wallets[0].evm_address,
+            "0x5D5f50BD26f984c354c50eF47408F9243343e124"
+        );
+        assert_eq!(
+            d.wallets[1].evm_address,
+            "0x35a222fB6709107291C82A3b8Ec47b3c97D296A8"
+        );
+        assert_eq!(
+            *evm_private_key_hex(&keys, 10),
+            "0xd6ce51bcc60eb79b0024748aebc392a70c3702358844dcc0dfc13621ea710367"
+        );
+        assert_eq!(
+            evm_line(&d.wallets[1], Lang::En),
+            "EVM address (NMTS Heavy, wallet 1): 0x35a222fB6709107291C82A3b8Ec47b3c97D296A8"
+        );
     }
 
     /// The fingerprint is what a recovery kit prints, so it has to be the same string.

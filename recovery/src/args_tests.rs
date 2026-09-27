@@ -150,6 +150,32 @@ fn a_wallet_count_that_is_not_one_is_refused() {
     }
 }
 
+/// `--export-evm-key N` names one EVM wallet, any number, and is not the default.
+#[test]
+fn an_evm_key_is_exported_only_by_number_and_only_when_asked() {
+    match parse(&v(&["--derive", "--export-evm-key", "3"])) {
+        Parsed::Run(a) => assert_eq!(a.export_evm_key, Some(3)),
+        Parsed::Print(msg, _) => panic!("--export-evm-key was refused: {msg}"),
+    }
+    match parse(&v(&["--derive"])) {
+        Parsed::Run(a) => assert_eq!(a.export_evm_key, None, "no key is the default"),
+        Parsed::Print(msg, _) => panic!("--derive was refused: {msg}"),
+    }
+    for bad in ["no", "-1", "4294967296"] {
+        assert!(
+            matches!(
+                parse(&v(&["--derive", "--export-evm-key", bad])),
+                Parsed::Print(_, 2)
+            ),
+            "--export-evm-key {bad} was accepted"
+        );
+    }
+    assert!(matches!(
+        parse(&v(&["--derive", "--export-evm-key"])),
+        Parsed::Print(_, 2)
+    ));
+}
+
 #[test]
 fn a_port_that_is_not_a_port_is_refused() {
     assert!(matches!(
@@ -245,7 +271,15 @@ fn crates_that_talk_to_the_network(cargo_toml: &std::path::Path) -> Vec<String> 
 #[test]
 fn every_part_of_this_program_that_opens_a_socket_is_named_in_the_help() {
     // file stem → the phrase in the help that describes what it contacts.
-    const NAMED: [(&str, &str); 2] = [("source", "Walrus aggregator"), ("discover", "Sui node")];
+    //
+    // ⚠ `filecoin` (NMTS Heavy, 2026-09-24) asks storage companies for pieces and a public Filecoin
+    //   node for a company's address. Its row is here, so this test stays red until the help's
+    //   WHAT GOES OUT block says "Filecoin" — that sentence is the main session's to write.
+    const NAMED: [(&str, &str); 3] = [
+        ("source", "Walrus aggregator"),
+        ("discover", "Sui node"),
+        ("filecoin", "Filecoin"),
+    ];
     let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let clients = crates_that_talk_to_the_network(&crate_dir.join("Cargo.toml"));
     // The three ways a file can name a crate: a path through it, an import of it, and an

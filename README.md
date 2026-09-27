@@ -20,8 +20,9 @@ tool and the encryption engine are open source under Apache-2.0.
 > **[한국어 문서](README.ko.md)** · Talk about NMTS on [Discord](https://discord.gg/pcmRkVmVZk),
 > in English or Korean.
 
-It contacts **no NMTS server at any point.** It reads public Walrus aggregators, or a folder of
-blobs you fetched yourself, and writes your files back out. It adds no cryptography of its own:
+It contacts **no NMTS server at any point.** It reads public Walrus aggregators — and, for files
+kept on Filecoin (NMTS Heavy), the storage companies the list names — or a folder of blobs you
+fetched yourself, and writes your files back out. It adds no cryptography of its own:
 every key derivation and every decryption is a call into `crypto/`, the same engine the NMTS
 browser code compiles to WebAssembly. The format is NCF-3, documented in
 [nmts-crypto](https://github.com/needmoretruth/nmts-crypto) with the conformance vectors that
@@ -105,9 +106,10 @@ after the bytes arrive is identical.
 | `--blobs-dir DIR` | read blobs from a directory instead of the network. |
 | `--only TEXT` | restore only files whose path or name contains TEXT. |
 | `--overwrite` | replace files that already exist. Off by default. |
-| `--derive` | print what your NMTS key derives, and stop. No list, no network. |
+| `--derive` | print what your NMTS key derives — including the EVM addresses that pay for NMTS Heavy — and stop. No list, no network. |
 | `--wallets N` | how many wallets `--derive` walks, and how many `--find` looks under. Default: 1. |
 | `--secrets` | with `--derive`, also print the wallet private keys. |
+| `--export-evm-key N` | with `--derive`, also print the private key of EVM wallet N, for an Ethereum-style wallet app. |
 | `--lang en\|ko` | message language. English by default; nothing is auto-detected. |
 
 **The NMTS key is never an argument.** It is typed when the program asks, or read from
@@ -205,6 +207,7 @@ storage.
 ```sh
 nmts-recovery --derive              # account id, fingerprint, public code, wallet addresses
 nmts-recovery --derive --secrets    # the same, plus the wallet private keys, behind a warning
+nmts-recovery --derive --export-evm-key 0   # the private key of EVM wallet 0 (NMTS Heavy), behind a warning
 ```
 
 The derivation is checked against fixtures taken from the library NMTS itself uses
@@ -220,6 +223,8 @@ GET https://<aggregator>/v1/blobs/<blob id>                       every restore 
 GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<patch id>
 POST https://<sui node>/     suix_getOwnedObjects for the derived wallet     --find only
 GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<derived patch id>      --find only
+GET https://<storage company>/piece/<piece id>                     a Filecoin (NMTS Heavy) part, companies in the list's order
+POST https://api.node.glif.io/rpc/v1   eth_call to the provider registry    only when every recorded company failed
 ```
 
 Public blobs, by their public ids; every response is bounded to the ciphertext length the list
@@ -228,6 +233,13 @@ server that somebody is looking for this account's files, at this moment, from t
 key itself is not sent and cannot be worked back to. `--rpc` names your own node; `--map FILE`
 avoids the lookup entirely. Addresses recorded inside a list are not contacted unless you ask with
 `--use-recorded-aggregators`.
+
+A Filecoin part is different: no public service serves every piece, so the list names the storage
+companies that keep it, and the program asks them for the piece by its id. When all of them fail,
+it asks a public Filecoin node (glif, or its Calibration twin for a test-network list) for each
+company's current address from the on-chain registry, and tries that. Both tell the company or the
+node that somebody is fetching this piece now. `--print-fetch-plan` prints these requests too, and
+`--blobs-dir` reads the pieces you fetched yourself (`piece-<piece id>.bin`).
 
 ## What it checks before it says a file came back
 

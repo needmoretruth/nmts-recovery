@@ -103,8 +103,8 @@
      Two columns sharing a line this short means each is narrower than its own shortest word, and
      what comes out is "/docume" "nts/offici" "al". As one run it simply wraps. */
   .list-row .meta { grid-column: 2; grid-row: 2; color: var(--muted); font-size: 0.85rem; overflow-wrap: break-word; }
-  .list-row .meta .size::before { content: " · "; }
-  .list-row .size { white-space: nowrap; }
+  .list-row .meta .size::before, .list-row .meta .net::before { content: " · "; }
+  .list-row .size, .list-row .net { white-space: nowrap; }
   .note { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--shade); border-radius: 0 6px 6px 0; overflow-wrap: break-word; }
   .note.bad { border-left-color: var(--bad); }
   .bar { height: 8px; background: var(--shade); border-radius: 4px; overflow: hidden; margin: 10px 0; }
@@ -123,12 +123,13 @@
   /* ⛔ Media rules last. A later rule of equal weight wins, so a width rule written above the
      ordinary ones is a width rule that silently does nothing. */
   @media (min-width: 40rem) {
-    .list-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+    .list-row { grid-template-columns: auto minmax(0, 1fr) auto auto auto; }
     /* The wrapper steps out of the way and its two children become grid items in their own right. */
     .list-row .meta { display: contents; }
-    .list-row .meta .size::before { content: none; }
+    .list-row .meta .size::before, .list-row .meta .net::before { content: none; }
     .list-row .dir { grid-column: 3; grid-row: 1; text-align: right; color: var(--muted); font-size: 0.85rem; overflow-wrap: break-word; }
     .list-row .size { grid-column: 4; grid-row: 1; color: var(--muted); font-size: 0.85rem; }
+    .list-row .net { grid-column: 5; grid-row: 1; color: var(--muted); font-size: 0.85rem; }
     dl.facts { grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; }
     dl.facts dt { margin-top: 0; }
   }
@@ -427,7 +428,11 @@
       var size = document.createElement("span");
       size.className = "size";
       size.textContent = bytes(item.size);
-      meta.appendChild(where); meta.appendChild(size);
+      // Where the file is kept — "Walrus" or "Filecoin", a name the program sends as it is.
+      var net = document.createElement("span");
+      net.className = "net";
+      net.textContent = item.network || "";
+      meta.appendChild(where); meta.appendChild(size); meta.appendChild(net);
       row.appendChild(tick); row.appendChild(name); row.appendChild(meta);
       box.appendChild(row);
     });
