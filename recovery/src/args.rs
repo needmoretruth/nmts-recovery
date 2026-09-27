@@ -102,6 +102,8 @@ pub struct Args {
     pub gui_out: Option<PathBuf>,
     /// How many wallets [`Mode::Derive`] walks.
     pub wallets: u32,
+    /// How many public codes [`Mode::Derive`] prints, numbered from 0 (NCF-3 §5.9).
+    pub public_codes: u32,
     /// Whether [`Mode::Derive`] also prints private keys.
     pub secrets: bool,
     /// The EVM wallet whose private key [`Mode::Derive`] prints (`--export-evm-key N`), behind its
@@ -139,6 +141,17 @@ const DEFAULT_WALLETS: u32 = 1;
 /// A ceiling on `--wallets`. Each one costs a key derivation, and a number past this is a typo
 /// rather than a request.
 const MAX_WALLETS: u32 = 100;
+
+/// Public codes printed by `--derive` when the caller names no number.
+///
+/// Code 0 is the one every account has from the start, so one is the answer for anybody who never
+/// made another. The tool reads no server, so it cannot count the codes an account made or tell
+/// which of them were revoked; `--public-codes` is the caller's count, as `--wallets` is.
+const DEFAULT_PUBLIC_CODES: u32 = 1;
+
+/// A ceiling on `--public-codes`, the same as `--wallets`'s. Each one costs a signing-key
+/// derivation, and a number past this is a typo rather than a request.
+const MAX_PUBLIC_CODES: u32 = 100;
 
 /// Levels of AI accounts walked when `--ai-accounts` names no depth.
 const DEFAULT_AI_DEPTH: u32 = 1;
@@ -230,11 +243,14 @@ OPTIONS
   --write-gui FILE     write the control page out as a file and stop, so you can
                        read it. Opening that file on its own does nothing.
   --derive             print what your NMTS key derives — the account id, its
-                       fingerprint, your public code, your wallet addresses, and
+                       fingerprint, your public codes, your wallet addresses, and
                        the EVM addresses that pay for NMTS Heavy on Filecoin.
                        No list, no network, nothing written.
   --wallets N          how many wallets --derive walks, and how many --find looks
                        under. Default: 1.
+  --public-codes N     how many public codes --derive prints, numbered from 0.
+                       Default: 1. The tool reads no server, so it cannot tell
+                       which of them you revoked.
   --secrets            with --derive, also print the wallet private keys. Anyone
                        who reads them can spend from those wallets.
   --export-evm-key N   with --derive, also print the private key of EVM wallet N,
@@ -295,6 +311,7 @@ pub fn parse(argv: &[String]) -> Parsed {
         no_open: false,
         gui_out: None,
         wallets: DEFAULT_WALLETS,
+        public_codes: DEFAULT_PUBLIC_CODES,
         secrets: false,
         export_evm_key: None,
         ai_accounts: false,
@@ -530,6 +547,21 @@ pub fn parse(argv: &[String]) -> Parsed {
                     _ => {
                         return Parsed::Print(
                             format!("--wallets takes a number from 1 to {MAX_WALLETS}."),
+                            2,
+                        )
+                    }
+                },
+                Err(e) => return Parsed::Print(e, 2),
+            },
+            "--public-codes" => match value("--public-codes") {
+                Ok(v) => match v.parse::<u32>() {
+                    Ok(n) if (1..=MAX_PUBLIC_CODES).contains(&n) => {
+                        a.public_codes = n;
+                        2
+                    }
+                    _ => {
+                        return Parsed::Print(
+                            format!("--public-codes takes a number from 1 to {MAX_PUBLIC_CODES}."),
                             2,
                         )
                     }

@@ -102,6 +102,7 @@ nmts-recovery --map FILE --print-fetch-plan   # 정확한 URL을 curl 명령으�
 | `--overwrite` | 이미 있는 파일을 바꿉니다. 기본은 끔. |
 | `--derive` | NMTS 키가 파생하는 것을 — NMTS Heavy 값을 내는 EVM 주소까지 — 찍고 멈춥니다. 목록 없음, 네트워크 없음. |
 | `--wallets N` | `--derive`가 걷고 `--find`가 찾아볼 지갑 수. 기본 1. |
+| `--public-codes N` | `--derive`가 찍을 공개 코드 수(0번부터). 기본 1. 서버를 읽지 않으므로 어느 코드를 폐기했는지는 알 수 없습니다. |
 | `--secrets` | `--derive`와 함께, 지갑 개인 키도 찍습니다. |
 | `--export-evm-key N` | `--derive`와 함께, EVM 지갑 N의 개인 키를 찍습니다. 이더리움 계열 지갑 앱에 넣을 수 있습니다. |
 | `--lang en\|ko` | 메시지 언어. 기본 영어. 자동 감지는 없습니다. |
@@ -193,6 +194,7 @@ nmts-recovery --gui
 
 ```sh
 nmts-recovery --derive              # 계정 id, 지문, 공개 코드, 지갑 주소
+nmts-recovery --derive --public-codes 3   # 같은 것에 공개 코드 0·1·2번
 nmts-recovery --derive --secrets    # 같은 것에 더해 지갑 개인 키. 경고 뒤에
 nmts-recovery --derive --export-evm-key 0   # EVM 지갑 0(NMTS Heavy)의 개인 키. 경고 뒤에
 ```

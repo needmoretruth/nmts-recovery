@@ -379,6 +379,10 @@ pub const DERIVE_HEAD: Line = Line("What this NMTS key derives:", "이 NMTS 키�
 pub const DERIVE_ACCOUNT_ID: Line = Line("Account id", "계정 식별자");
 pub const DERIVE_FINGERPRINT: Line = Line("Fingerprint", "지문");
 pub const DERIVE_PUBLIC_CODE: Line = Line("Public code", "공개 코드");
+pub const DERIVE_PUBLIC_CODES_REVOKED: Line = Line(
+    "This tool reads no server, so it cannot tell which of these codes you revoked.",
+    "이 도구는 서버를 읽지 않으므로 이 가운데 어느 코드를 폐기했는지 알 수 없습니다.",
+);
 pub const DERIVE_WALLET: Line = Line("Wallet", "지갑");
 pub const DERIVE_SECRET_KEY: Line = Line("Private key", "개인 키");
 pub const DERIVE_EVM_ADDRESS: Line = Line(
@@ -636,6 +640,7 @@ pub const ALL_LINES: &[Line] = &[
     DERIVE_ACCOUNT_ID,
     DERIVE_FINGERPRINT,
     DERIVE_PUBLIC_CODE,
+    DERIVE_PUBLIC_CODES_REVOKED,
     DERIVE_WALLET,
     DERIVE_SECRET_KEY,
     DERIVE_EVM_ADDRESS,

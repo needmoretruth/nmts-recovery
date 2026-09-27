@@ -115,7 +115,7 @@ fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
     let lang = a.lang;
     let code = account_code(a, lang)?;
     let keys = nmts_crypto::kdf::derive(&code).map_err(|e| format!("{e}"))?;
-    let d = derive::from_keys(&keys, a.wallets, a.secrets);
+    let d = derive::from_keys(&keys, a.wallets, a.public_codes, a.secrets);
 
     println!("\n{}", msg::DERIVE_HEAD.get(lang));
     println!(
@@ -128,11 +128,16 @@ fn show_derived(a: &args::Args) -> Result<ExitCode, String> {
         msg::DERIVE_FINGERPRINT.get(lang),
         d.fingerprint
     );
-    println!(
-        "  {:<16} {}",
-        msg::DERIVE_PUBLIC_CODE.get(lang),
-        d.public_code
-    );
+    for p in &d.public_codes {
+        println!(
+            "  {:<16} {}",
+            format!("{} {}", msg::DERIVE_PUBLIC_CODE.get(lang), p.index),
+            p.code
+        );
+    }
+    if d.public_codes.len() > 1 {
+        println!("  {}", msg::DERIVE_PUBLIC_CODES_REVOKED.get(lang));
+    }
     for w in &d.wallets {
         println!(
             "  {:<16} {}",

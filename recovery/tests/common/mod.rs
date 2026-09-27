@@ -282,6 +282,22 @@ impl Fixture {
             self.path("blobs").to_str().expect("utf8 path"),
         ])
     }
+
+    /// `--derive` from the NMTS key alone — no list is named — and what it printed. A run that
+    /// failed stops the test here, with what the program said.
+    pub fn derive(&self, extra: &[&str]) -> String {
+        let out = Command::new(env!("CARGO_BIN_EXE_nmts-recovery"))
+            .arg("--derive")
+            .arg("--code-file")
+            .arg(self.path("code.txt"))
+            .args(["--lang", "en"])
+            .args(extra)
+            .output()
+            .expect("run nmts-recovery");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "--derive failed: {stderr}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
 }
 
 /// A string shaped like a PieceCIDv2 (`bafkzcib` + lowercase base32), different per `seed`. It names

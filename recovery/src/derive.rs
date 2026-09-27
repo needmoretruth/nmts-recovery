@@ -14,7 +14,7 @@
 //! library the product itself uses (`tests/derive.rs`).
 //!
 //! # ⛔ Secrets are printed only when asked for twice
-//! `--derive` prints the public half: account id, fingerprint, public code, wallet addresses. A
+//! `--derive` prints the public half: account id, fingerprint, public codes, wallet addresses. A
 //! person checking "is this the right account?" should not have their wallet's private key land in
 //! their terminal scrollback as a side effect. `--secrets` adds the private keys, behind a warning.
 //! That is not security theatre — the code is right there in the caller's hand either way — it is
@@ -49,6 +49,14 @@ pub struct Wallet {
     pub evm_address: String,
     /// `suiprivkey1…`, present only when the caller asked for secrets.
     pub secret: Option<String>,
+}
+
+/// One public code the NMTS key derives (NCF-3 §5.9).
+pub struct PublicCode {
+    /// The identity's number. 0 is the code every account has from the start.
+    pub index: u32,
+    /// The address other people send shared files to, in its display form.
+    pub code: String,
 }
 
 /// One AI account the NMTS key derives (NCF-3 §1.5).
@@ -108,14 +116,28 @@ pub struct Derived {
     pub account_id: String,
     /// Short, human-checkable form of the account id. Public.
     pub fingerprint: String,
-    /// The address other people send shared files to. Public.
-    pub public_code: String,
+    /// The addresses other people send shared files to, numbered from 0. Public.
+    pub public_codes: Vec<PublicCode>,
     pub wallets: Vec<Wallet>,
 }
 
 /// Walk the derivation and collect what it produced.
-pub fn from_keys(keys: &DerivedKeys, wallet_count: u32, with_secrets: bool) -> Derived {
+///
+/// ⚠ Public code `N` needs both identity `N`'s own signing seed AND the number: the number is part
+///   of the root the address fingerprints, so seed and number together name one code.
+pub fn from_keys(
+    keys: &DerivedKeys,
+    wallet_count: u32,
+    public_code_count: u32,
+    with_secrets: bool,
+) -> Derived {
     let account_id = keys.account_id_b64();
+    let public_codes = (0..public_code_count)
+        .map(|index| PublicCode {
+            index,
+            code: share::address_at(&keys.share_seeds_for(index).sig, index).display(),
+        })
+        .collect();
     let wallets = (0..wallet_count)
         .map(|index| {
             let seed = keys.wallet_seed_for(index);
@@ -129,7 +151,7 @@ pub fn from_keys(keys: &DerivedKeys, wallet_count: u32, with_secrets: bool) -> D
         .collect();
     Derived {
         fingerprint: fingerprint(&account_id),
-        public_code: share::address_for(&keys.share_sig_seed).display(),
+        public_codes,
         account_id,
         wallets,
     }
@@ -265,7 +287,7 @@ mod tests {
     fn the_evm_wallet_matches_the_conformance_vector() {
         let code = nmts_crypto::codes::AccountCode::from_bytes([0u8; 20]);
         let keys = nmts_crypto::kdf::derive(&code).expect("derive");
-        let d = from_keys(&keys, 2, false);
+        let d = from_keys(&keys, 2, 1, false);
         assert_eq!(
             d.wallets[0].evm_address,
             "0x5D5f50BD26f984c354c50eF47408F9243343e124"
@@ -305,9 +327,9 @@ mod tests {
     fn private_keys_are_absent_unless_asked_for() {
         let code = nmts_crypto::codes::AccountCode::generate();
         let keys = nmts_crypto::kdf::derive(&code).expect("derive");
-        let quiet = from_keys(&keys, 2, false);
+        let quiet = from_keys(&keys, 2, 1, false);
         assert!(quiet.wallets.iter().all(|w| w.secret.is_none()));
-        let loud = from_keys(&keys, 2, true);
+        let loud = from_keys(&keys, 2, 1, true);
         assert!(loud.wallets.iter().all(|w| w.secret.is_some()));
         // The public half is identical either way — asking for secrets must not change an address.
         assert_eq!(
@@ -352,9 +374,43 @@ mod tests {
     fn two_account_codes_derive_to_different_everything() {
         let a = nmts_crypto::kdf::derive(&nmts_crypto::codes::AccountCode::generate()).expect("a");
         let b = nmts_crypto::kdf::derive(&nmts_crypto::codes::AccountCode::generate()).expect("b");
-        let (da, db) = (from_keys(&a, 1, false), from_keys(&b, 1, false));
+        let (da, db) = (from_keys(&a, 1, 1, false), from_keys(&b, 1, 1, false));
         assert_ne!(da.account_id, db.account_id);
-        assert_ne!(da.public_code, db.public_code);
+        assert_ne!(da.public_codes[0].code, db.public_codes[0].code);
         assert_ne!(da.wallets[0].address, db.wallets[0].address);
+    }
+
+    /// Code 0 is the code the account has always had, and every number is a different code that
+    /// the same key gives back unchanged — the tool is only useful if it prints what the product made.
+    #[test]
+    fn public_codes_start_at_the_old_code_and_each_number_is_its_own() {
+        let keys = nmts_crypto::kdf::derive(&nmts_crypto::codes::AccountCode::generate()).unwrap();
+        let first = from_keys(&keys, 1, 3, false);
+        let codes: Vec<&str> = first.public_codes.iter().map(|p| p.code.as_str()).collect();
+        assert_eq!(
+            first
+                .public_codes
+                .iter()
+                .map(|p| p.index)
+                .collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+        assert_eq!(
+            codes[0],
+            share::address_for(&keys.share_sig_seed).display(),
+            "code 0 moved"
+        );
+        assert_ne!(codes[0], codes[1]);
+        assert_ne!(codes[0], codes[2]);
+        assert_ne!(codes[1], codes[2]);
+        let again = from_keys(&keys, 1, 3, false);
+        assert_eq!(
+            codes,
+            again
+                .public_codes
+                .iter()
+                .map(|p| p.code.as_str())
+                .collect::<Vec<_>>()
+        );
     }
 }

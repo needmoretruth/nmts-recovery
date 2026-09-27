@@ -108,6 +108,7 @@ after the bytes arrive is identical.
 | `--overwrite` | replace files that already exist. Off by default. |
 | `--derive` | print what your NMTS key derives — including the EVM addresses that pay for NMTS Heavy — and stop. No list, no network. |
 | `--wallets N` | how many wallets `--derive` walks, and how many `--find` looks under. Default: 1. |
+| `--public-codes N` | how many public codes `--derive` prints, numbered from 0. Default: 1. The tool reads no server, so it cannot tell which of them you revoked. |
 | `--secrets` | with `--derive`, also print the wallet private keys. |
 | `--export-evm-key N` | with `--derive`, also print the private key of EVM wallet N, for an Ethereum-style wallet app. |
 | `--lang en\|ko` | message language. English by default; nothing is auto-detected. |
@@ -206,6 +207,7 @@ storage.
 
 ```sh
 nmts-recovery --derive              # account id, fingerprint, public code, wallet addresses
+nmts-recovery --derive --public-codes 3   # the same, with public codes 0, 1 and 2
 nmts-recovery --derive --secrets    # the same, plus the wallet private keys, behind a warning
 nmts-recovery --derive --export-evm-key 0   # the private key of EVM wallet 0 (NMTS Heavy), behind a warning
 ```

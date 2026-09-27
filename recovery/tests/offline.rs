@@ -482,25 +482,19 @@ fn a_kit_and_a_list_that_disagree_about_the_account_are_refused() {
 #[test]
 fn deriving_from_a_code_alone_prints_the_public_values_and_no_secrets() {
     let fx = Fixture::new();
-    let out = Command::new(env!("CARGO_BIN_EXE_nmts-recovery"))
-        .args([
-            "--derive",
-            "--code-file",
-            fx.path("code.txt").to_str().expect("utf8"),
-        ])
-        .args(["--lang", "en"])
-        .output()
-        .expect("run");
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let said = String::from_utf8_lossy(&out.stdout).to_string();
+    let said = fx.derive(&[]);
 
     let keys = nmts_crypto::kdf::derive(&fx.code).expect("derive");
     assert!(said.contains(&keys.account_id_b64()), "{said}");
-    assert!(said.contains("Public code"), "{said}");
+    assert!(said.contains("Public code 0"), "{said}");
+    assert!(
+        !said.contains("Public code 1"),
+        "one code unless asked: {said}"
+    );
+    assert!(
+        !said.contains("cannot tell which"),
+        "one code, no revocation line: {said}"
+    );
     assert!(said.contains("0x"), "no wallet address: {said}");
     // ⛔ Not by default. Somebody checking an account id must not get a spendable key for free.
     assert!(
@@ -513,23 +507,24 @@ fn deriving_from_a_code_alone_prints_the_public_values_and_no_secrets() {
     );
 }
 
+/// `--public-codes 3` prints codes 0, 1 and 2, and says the tool cannot know which were revoked.
+#[test]
+fn asking_for_three_public_codes_prints_three_and_says_revocation_is_unknown() {
+    let said = Fixture::new().derive(&["--public-codes", "3"]);
+    for n in 0..3 {
+        assert!(said.contains(&format!("Public code {n}")), "{said}");
+    }
+    assert!(!said.contains("Public code 3"), "{said}");
+    assert!(
+        said.contains("cannot tell which of these codes you revoked"),
+        "{said}"
+    );
+}
+
 /// And with `--secrets`, the warning comes BEFORE the keys.
 #[test]
 fn asking_for_secrets_prints_them_after_the_warning_about_them() {
-    let fx = Fixture::new();
-    let out = Command::new(env!("CARGO_BIN_EXE_nmts-recovery"))
-        .args(["--derive", "--secrets", "--wallets", "2"])
-        .args(["--code-file", fx.path("code.txt").to_str().expect("utf8")])
-        .args(["--lang", "en"])
-        .output()
-        .expect("run");
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let said = String::from_utf8_lossy(&out.stdout).to_string();
-
+    let said = Fixture::new().derive(&["--secrets", "--wallets", "2"]);
     assert_eq!(
         said.matches("suiprivkey").count(),
         2,
