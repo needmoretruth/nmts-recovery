@@ -47,6 +47,7 @@ mod dates;
 mod derive;
 mod discover;
 mod filecoin;
+mod grpc_web;
 mod gui;
 mod kitfile;
 mod mapfile;

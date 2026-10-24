@@ -67,7 +67,7 @@ pub struct Args {
     /// symmetric: a mistyped path should say the file is missing, not quietly start asking public
     /// services about an address.
     pub find: bool,
-    /// Sui JSON-RPC endpoints for `--find`, in order. Empty means the built-in list.
+    /// Sui nodes for `--find`, asked over gRPC-web, in order. Empty means the built-in list.
     pub rpcs: Vec<String>,
     /// The wallet address that paid for the uploads, when the NMTS key does not derive it.
     ///
@@ -217,7 +217,8 @@ OPTIONS
                        NMTS key alone — no saved file needed. Works when the account
                        turned the storage-network copy on and paid with the wallet
                        the NMTS key derives.
-  --rpc URL            a Sui node for --find to ask. Repeatable; tried in order.
+  --rpc URL            a Sui node for --find to ask (over gRPC-web). Repeatable;
+                       tried in order.
   --owner 0xADDRESS    with --find, the wallet that paid for the uploads. Needed only
                        when that wallet is a browser extension or an imported key,
                        because the NMTS key cannot derive such an address.

@@ -30,17 +30,15 @@ use nmts_crypto::kdf::DerivedKeys;
 use nmts_crypto::manifest::{recovery_patch_name, RecoveryManifest};
 
 use crate::derive::sui_address;
+use crate::grpc_web;
 
-/// Sui JSON-RPC endpoints tried when the caller names none, in order.
+/// Sui nodes tried when the caller names none, in order — asked over gRPC-web (`grpc_web.rs`).
 ///
-/// ⚠ Public MIRRORS, not the official fullnodes, and that is not a preference: the official
-/// fullnodes retired JSON-RPC on both networks (measured by the NMTS team, 2026-07-29 testnet and
-/// 2026-08-03 mainnet). `--rpc` replaces the whole list.
-///
-/// ⭐ 2026-09-01 — two operators now, not one, and the testnet entry that had been here was
-/// measured DEAD that morning: `rpc-testnet.suiscan.xyz` completes the TCP handshake in 31 ms and
-/// then sends nothing for 12 seconds, three times running. It had been dead for eleven days. The
-/// hosts below all answered `sui_getChainIdentifier` with the right value the same morning.
+/// ⭐ 2026-10-21 — A NEW LIST, BECAUSE THE PROTOCOL CHANGED. Sui removed JSON-RPC from its node
+/// software in October 2026, and every host that stood here answered only JSON-RPC (both testnet
+/// ones were already gone that morning). The four below answered the gRPC question this tool asks,
+/// `StateService/ListOwnedObjects`, the same day — the same four the NMTS web app and command-line
+/// tool use, two operators per network (Suiscan and Mysten Labs). `--rpc` replaces the whole list.
 ///
 /// ⛔ WHAT THE ORDER ACTUALLY DOES — read this before adding to it. [`owned_blob_ids`] returns
 /// the FIRST host that answers at all, so the list is a failover chain, not a sweep across
@@ -50,9 +48,9 @@ use crate::derive::sui_address;
 /// opposite.
 pub const DEFAULT_RPCS: [&str; 4] = [
     "https://rpc-mainnet.suiscan.xyz",
-    "https://sui-rpc.publicnode.com",
-    "https://sui-testnet-rpc.publicnode.com",
-    "https://testnet.suiet.app",
+    "https://fullnode.mainnet.sui.io",
+    "https://fullnode.testnet.sui.io",
+    "https://rpc-testnet.suiscan.xyz",
 ];
 
 /// How many pages of owned objects one address is walked for.
@@ -62,7 +60,7 @@ pub const DEFAULT_RPCS: [&str; 4] = [
 /// holds nothing" to the one person who most needs the opposite.
 const MAX_PAGES: usize = 20;
 
-/// Objects requested per page. The RPC's own maximum is larger; this keeps one response small
+/// Objects requested per page. The node's own maximum is larger; this keeps one response small
 /// enough to parse without holding a whole account's object set in memory at once.
 const PAGE_SIZE: u32 = 50;
 
@@ -263,7 +261,7 @@ struct OwnedBlobs {
     truncated: bool,
 }
 
-/// Every Walrus blob id an address owns, via `suix_getOwnedObjects`.
+/// Every Walrus blob id an address owns, via gRPC `StateService/ListOwnedObjects`.
 fn owned_blob_ids(agent: &ureq::Agent, rpcs: &[String], owner: &str) -> Result<OwnedBlobs, String> {
     let mut failures = Vec::new();
     for rpc in rpcs {
@@ -279,168 +277,74 @@ fn owned_blob_ids(agent: &ureq::Agent, rpcs: &[String], owner: &str) -> Result<O
 }
 
 fn owned_blob_ids_from(agent: &ureq::Agent, rpc: &str, owner: &str) -> Result<OwnedBlobs, String> {
+    let url = format!(
+        "{}{}",
+        rpc.trim_end_matches('/'),
+        grpc_web::LIST_OWNED_OBJECTS_PATH
+    );
     let mut blob_ids = Vec::new();
-    let mut cursor = serde_json::Value::Null;
-    for page in 0..MAX_PAGES {
-        let body = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": page + 1,
-            "method": "suix_getOwnedObjects",
-            "params": [owner, {"options": {"showType": true, "showContent": true}}, cursor, PAGE_SIZE],
-        });
-        // Sent as a string with an explicit content type rather than through ureq's JSON helper:
-        // that helper is behind a cargo feature, and one `serde_json::to_string` is a smaller
-        // thing to depend on than a feature flag in a program meant to be audited by reading.
-        let payload = serde_json::to_string(&body).map_err(|e| format!("{e}"))?;
+    let mut token: Option<Vec<u8>> = None;
+    for _ in 0..MAX_PAGES {
+        let request = grpc_web::list_owned_objects_request(owner, PAGE_SIZE, token.as_deref());
         let mut resp = agent
-            .post(rpc)
-            .header("content-type", "application/json")
-            .send(&payload)
+            .post(&url)
+            .header("content-type", grpc_web::CONTENT_TYPE)
+            .header("accept", grpc_web::CONTENT_TYPE)
+            .header("x-grpc-web", "1")
+            .send(&grpc_web::frame(&request)[..])
             .map_err(|e| format!("could not be reached ({e})"))?;
         let status = resp.status().as_u16();
         if status != 200 {
             return Err(format!("answered {status}"));
         }
-        let text = resp
+        let header_status = resp
+            .headers()
+            .get("grpc-status")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let body = resp
             .body_mut()
             .with_config()
             .limit(MAX_RPC_BYTES)
-            .read_to_string()
+            .read_to_vec()
             .map_err(|e| format!("stopped part way ({e})"))?;
-        let doc: serde_json::Value = serde_json::from_str(&text)
-            .map_err(|e| format!("answered something that is not JSON ({e})"))?;
-        if let Some(err) = doc.get("error") {
-            return Err(format!("answered an error ({err})"));
-        }
-        let result = doc
-            .get("result")
-            .ok_or_else(|| "answered without a result".to_string())?;
-        for entry in result
-            .get("data")
-            .and_then(|d| d.as_array())
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-        {
-            let Some(data) = entry.get("data") else {
-                continue;
-            };
-            let is_blob = data
-                .get("type")
-                .and_then(|t| t.as_str())
+        let message = grpc_web::split_answer(&body, header_status.as_deref())?;
+        let page = grpc_web::owned_page(&message)?;
+        for object in page.objects {
+            let is_blob = object
+                .object_type
+                .as_deref()
                 .is_some_and(|t| t.ends_with(BLOB_TYPE_SUFFIX));
             if !is_blob {
                 continue;
             }
-            if let Some(decimal) = data
-                .pointer("/content/fields/blob_id")
-                .and_then(|v| v.as_str())
+            match object
+                .contents
+                .as_deref()
+                .and_then(grpc_web::blob_id_from_contents)
             {
-                match blob_id_from_u256(decimal) {
-                    Some(id) => blob_ids.push(id),
-                    None => {
-                        return Err(format!("gave a blob id this build cannot read ({decimal})"))
-                    }
+                Some(id) => blob_ids.push(id),
+                None => {
+                    return Err(
+                        "gave a blob object whose contents this build cannot read".to_string()
+                    )
                 }
             }
         }
-        let has_next = result
-            .get("hasNextPage")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if !has_next {
-            return Ok(OwnedBlobs {
-                blob_ids,
-                truncated: false,
-            });
+        match page.next_page_token {
+            Some(next) if !next.is_empty() => token = Some(next),
+            _ => {
+                return Ok(OwnedBlobs {
+                    blob_ids,
+                    truncated: false,
+                })
+            }
         }
-        cursor = result
-            .get("nextCursor")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
     }
     Ok(OwnedBlobs {
         blob_ids,
         truncated: true,
     })
-}
-
-/// Sui stores a Walrus blob id as a `u256`; Walrus writes it as unpadded base64url of that number
-/// in LITTLE-endian bytes, which is what BCS makes of a `u256`.
-///
-/// Getting the byte order wrong here produces a well-formed id that no aggregator has ever heard
-/// of, so it fails as "not found" rather than as an error — which is why the direction is pinned
-/// by a test rather than left to the reader's memory.
-pub fn blob_id_from_u256(decimal: &str) -> Option<String> {
-    let mut bytes = [0u8; 32];
-    let mut value = parse_u256(decimal)?;
-    for slot in bytes.iter_mut() {
-        *slot = (value & 0xff) as u8;
-        value >>= 8;
-    }
-    Some(nmts_crypto::b64::encode(&bytes))
-}
-
-/// A decimal string as a 256-bit number, in four 64-bit limbs, without pulling in a bignum crate.
-///
-/// Written out rather than depended on because the whole crate is auditable-by-reading and one
-/// multiply-add loop is smaller than a dependency. Returns `None` on anything that is not a plain
-/// decimal or that does not fit in 256 bits — both mean the node said something this build should
-/// not guess about.
-fn parse_u256(decimal: &str) -> Option<U256> {
-    if decimal.is_empty() || !decimal.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let mut acc = U256::ZERO;
-    for b in decimal.bytes() {
-        acc = acc.mul10_add(b - b'0')?;
-    }
-    Some(acc)
-}
-
-/// A 256-bit unsigned integer, only as much of one as this file needs.
-#[derive(Clone, Copy)]
-struct U256([u64; 4]);
-
-impl U256 {
-    const ZERO: Self = Self([0; 4]);
-
-    /// `self * 10 + digit`, or `None` on overflow past 256 bits.
-    fn mul10_add(self, digit: u8) -> Option<Self> {
-        let mut out = [0u64; 4];
-        let mut carry = u128::from(digit);
-        for (i, limb) in self.0.iter().enumerate() {
-            let wide = u128::from(*limb) * 10 + carry;
-            out[i] = wide as u64;
-            carry = wide >> 64;
-        }
-        if carry != 0 {
-            return None;
-        }
-        Some(Self(out))
-    }
-}
-
-impl std::ops::BitAnd<u64> for U256 {
-    type Output = u64;
-    fn bitand(self, rhs: u64) -> u64 {
-        self.0[0] & rhs
-    }
-}
-
-impl std::ops::ShrAssign<u32> for U256 {
-    fn shr_assign(&mut self, rhs: u32) {
-        // Only byte-sized shifts are ever asked for here; a zero or oversized one would be a
-        // shift-overflow rather than a wrong answer, so it is refused instead of wrapped.
-        if rhs == 0 || rhs >= 64 {
-            return;
-        }
-        let mut carry = 0u64;
-        for limb in self.0.iter_mut().rev() {
-            let next = *limb << (64 - rhs);
-            *limb = (*limb >> rhs) | carry;
-            carry = next;
-        }
-    }
 }
 
 /// Ask each aggregator for one patch by quilt id and identifier. `Ok(None)` = nobody has it.
@@ -497,8 +401,9 @@ fn fetch_patch(
 /// anything that could exhaust a desktop.
 const MAX_LIST_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Ceiling on one JSON-RPC answer. A page of 50 objects is kilobytes; this is room to spare and
-/// still a bound, so a node answering with an endless body ends as an error rather than as memory.
+/// Ceiling on one node answer. A page of 50 objects is kilobytes (a Blob's contents are ~140 bytes,
+/// measured 2026-10-21); this is room to spare and still a bound, so a node answering with an
+/// endless body ends as an error rather than as memory.
 const MAX_RPC_BYTES: u64 = 32 * 1024 * 1024;
 
 #[cfg(test)]
@@ -564,44 +469,37 @@ mod tests {
         ));
     }
 
-    /// ⛔ The byte order is the whole test. A big-endian reading produces a perfectly well-formed
-    /// blob id that simply does not exist, so the failure it causes is "your files are not there"
-    /// — the most alarming possible way to be told about an endianness bug.
+    /// The one live check of the gRPC-web question: a mainnet address known to own Walrus blobs, asked
+    /// of each default mainnet host on its own. READ-ONLY — it lists objects and spends nothing.
     ///
-    /// The pair below was read off Sui mainnet-style data: the decimal is what the node returns in
-    /// `content.fields.blob_id`, the string is what Walrus calls the same blob.
+    /// ⭐ The expected id was read the other way on 2026-10-21: the node's JSON rendering of the same
+    /// object gave the decimal `blob_id`, converted with the little-endian rule Walrus uses. Agreeing
+    /// with it proves the BCS offset and the byte order against data nobody wrote for this test.
     #[test]
-    fn a_blob_id_is_the_little_endian_bytes_of_the_number_sui_stores() {
-        let decimal =
-            "99948925563890497458821702329675998710172654685512294950270493148941086336630";
-        assert_eq!(
-            blob_id_from_u256(decimal).as_deref(),
-            Some("dqYHNuwRK5vsFI-pHDhEGtHIEOy_H-zkXFvTj04W-dw"),
-        );
-    }
-
-    #[test]
-    fn the_smallest_and_largest_numbers_still_produce_ids() {
-        assert_eq!(
-            blob_id_from_u256("0").as_deref(),
-            Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
-        );
-        // 2^256 - 1: every byte 0xff, whichever end you start from.
-        let max = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
-        assert_eq!(
-            blob_id_from_u256(max).as_deref(),
-            Some("__________________________________________8"),
-        );
-    }
-
-    #[test]
-    fn a_number_that_is_not_a_number_is_refused_rather_than_guessed_at() {
-        for bad in ["", " 12", "12 ", "0x1f", "-1", "1.0", "abc"] {
-            assert!(blob_id_from_u256(bad).is_none(), "accepted {bad:?}");
+    #[ignore = "reaches public Sui mainnet nodes; set RECOVERY_LIVE_SUI=1"]
+    fn a_live_mainnet_address_lists_its_blobs_on_every_default_host() {
+        if std::env::var("RECOVERY_LIVE_SUI").ok().as_deref() != Some("1") {
+            eprintln!("RECOVERY_LIVE_SUI is not 1 — not touching the network.");
+            return;
         }
-        // 2^256 exactly — one past what a blob id can hold.
-        let over = "115792089237316195423570985008687907853269984665640564039457584007913129639936";
-        assert!(blob_id_from_u256(over).is_none());
+        const OWNER: &str = "0xc1bd6744bf571d8fc297652c2708db020eee72daeabd7fe63e3a90f3d123f4ab";
+        const KNOWN: &str = "9jMB47B35cNzMX3VfxhtOOuL1eW6d_lRTmH-vYPsYvg";
+        let agent = http_agent();
+        for host in &DEFAULT_RPCS[..2] {
+            let found = owned_blob_ids(&agent, &[host.to_string()], OWNER)
+                .unwrap_or_else(|why| panic!("{host}: {why}"));
+            eprintln!(
+                "{host}: {} blob ids, truncated {}",
+                found.blob_ids.len(),
+                found.truncated
+            );
+            assert!(found.blob_ids.len() > 100, "{host} listed too few blobs");
+            assert!(found.blob_ids.iter().all(|id| id.len() == 43));
+            assert!(
+                found.blob_ids.iter().any(|id| id == KNOWN),
+                "{host}: the known blob is missing"
+            );
+        }
     }
 
     #[test]

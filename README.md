@@ -223,7 +223,7 @@ request. What is sent:
 ```
 GET https://<aggregator>/v1/blobs/<blob id>                       every restore not using --blobs-dir
 GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<patch id>
-POST https://<sui node>/     suix_getOwnedObjects for the derived wallet     --find only
+POST https://<sui node>/sui.rpc.v2.StateService/ListOwnedObjects   gRPC-web, the derived wallet's objects   --find only
 GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<derived patch id>      --find only
 GET https://<storage company>/piece/<piece id>                     a Filecoin (NMTS Heavy) part, companies in the list's order
 POST https://api.node.glif.io/rpc/v1   eth_call to the provider registry    only when every recorded company failed

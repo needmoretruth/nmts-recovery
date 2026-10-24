@@ -209,7 +209,7 @@ nmts-recovery --derive --export-evm-key 0   # EVM 지갑 0(NMTS Heavy)의 개인
 ```
 GET https://<aggregator>/v1/blobs/<blob id>                       --blobs-dir가 아닌 모든 복구
 GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<patch id>
-POST https://<sui node>/     파생한 지갑에 대한 suix_getOwnedObjects     --find만
+POST https://<sui node>/sui.rpc.v2.StateService/ListOwnedObjects   gRPC-web, 파생한 지갑의 객체   --find만
 GET https://<aggregator>/v1/blobs/by-quilt-patch-id/<derived patch id>      --find만
 GET https://<저장 회사>/piece/<piece id>                            Filecoin(NMTS Heavy) 조각, 목록의 회사 순서대로
 POST https://api.node.glif.io/rpc/v1   저장 회사 등록부에 eth_call         적힌 회사가 모두 실패했을 때만
