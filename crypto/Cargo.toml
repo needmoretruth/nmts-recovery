@@ -48,7 +48,7 @@ x-wing = { version = "0.1", default-features = false, features = ["zeroize"] }
 # matters in the browser build, and `zeroize` clears the expanded signing key on drop.
 # Same maintainers and the same lattice stack as the `x-wing`/`ml-kem` above, so `shake`,
 # `module-lattice` and `hybrid-array` are shared rather than duplicated.
-ml-dsa = { version = "0.1.1", default-features = false, features = ["alloc", "zeroize"] }
+ml-dsa = { version = "0.1.2", default-features = false, features = ["alloc", "zeroize"] }
 # The SENDER-AUTHENTICATION half of the share identity (NCF-3 §5). A second, static X25519 key:
 # the sender agrees with the recipient's matching key and mixes the result into the wrapping key,
 # so an envelope only opens if the claimed sender produced it — and, unlike a signature, that

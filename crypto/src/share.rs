@@ -705,8 +705,8 @@ pub(crate) fn public_key_inner(
     raw[OFF_PK_KEM..OFF_PK_AUTH].copy_from_slice(&kem.to_bytes()[..]);
     raw[OFF_PK_AUTH..OFF_SELF_SIG].copy_from_slice(auth.as_bytes());
 
-    // ⛔ The DETERMINISTIC variant, never the hedged one — see the module docs. The only way this
-    // can fail is a context string longer than 255 bytes, and ours is a compile-time constant.
+    // ⛔ DETERMINISTIC, never hedged (module docs). Fails only for a context over 255 bytes (ours is a
+    // constant) or, from ml-dsa 0.1.2, an exhausted rejection loop (0.1.1 panicked there too).
     let signature = signing_key
         .sign_deterministic(&raw[..SHARE_SIGNED_LEN], SIG_CTX_IDENTITY_BUNDLE)
         .expect("the identity-bundle context is a fixed 23-byte constant");

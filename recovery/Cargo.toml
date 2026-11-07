@@ -1,8 +1,8 @@
 [package]
 name = "nmts-recovery"
-version = "0.14.0"
+version = "0.14.1"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.87"
 description = "Recover files uploaded with NMTS using only an NMTS key, a recovery list, and a public Walrus aggregator. No NMTS server is contacted."
 authors = ["needmoretruth"]
 license = "Apache-2.0"

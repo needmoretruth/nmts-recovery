@@ -1696,16 +1696,15 @@ Written here because a specification that lists only its defences is a marketing
   latest. Once a replacement flow exists, a server could keep serving a stale signed bundle — the
   same shape as the §6.1 rollback, with the same class of answer (an anchor the server does not
   control) recorded in our backlog, not quietly left out.
-* **A timing side channel in the signature crate's keygen sampler.** The released `ml-dsa` 0.1.1
-  still branches on secret-derived values in `coeff_from_half_byte` (the branch-free fix was merged
-  upstream on 2026-06-24 but is in no released version — measured against the crates.io index,
-  last on 2026-08-17). Our structure re-derives the same key from the same seed at every login,
-  which is the repeat-measurement shape timing attacks want — but the code runs inside the user's
-  own browser, where an observer with a timer that precise is already in the page. Accepted and
-  recorded. ⭐ **This sentence cannot quietly rot**: since 2026-08-17 our deploy reads the crates.io
-  index for this crate on every release and refuses to ship the day a released version appears,
-  pointing at this paragraph. Until then it was a `curl` command in a backlog entry, which is to
-  say nobody ran it.
+* **The signature crate's keygen sampler — closed on 2026-11-08.** `ml-dsa` 0.1.1, which NMTS
+  shipped from 2026-08-02, branched on secret-derived values in `coeff_from_half_byte`, and this
+  paragraph carried that as an accepted limit. Since 2026-11-08 every build (engine, browser
+  WASM, server, recovery tool) uses `ml-dsa` 0.1.2 (released 2026-10-31), whose mapping is
+  branch-free. What still varies with the secret stream is the rejection step FIPS 204 itself
+  specifies (Algorithm 31, `RejBoundedPoly`): its running time reveals how many candidate values
+  were discarded, never the coefficients kept. The move changed no output: the §7 vectors and a
+  fixed-seed key and deterministic signature recorded on 0.1.1 (`crypto/tests/ml_dsa_pin.rs`)
+  pass unchanged on 0.1.2, so every published identity keeps its bytes.
 * **Deletion, replay, and the sender's own view of a share** (§5.3). The row binding authenticates
   the contents of a share that is shown. A server can still withhold a share, serve an older one it
   kept, or show the *sender* a "shared with" list that is fiction. It authenticates a row, not the
