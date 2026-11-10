@@ -42,16 +42,27 @@ use crate::grpc_web;
 ///
 /// ⛔ WHAT THE ORDER ACTUALLY DOES — read this before adding to it. [`owned_blob_ids`] returns
 /// the FIRST host that answers at all, so the list is a failover chain, not a sweep across
-/// networks: the testnet hosts are only ever asked when both mainnet hosts are unreachable. An
+/// networks: the testnet hosts are only ever asked when every mainnet host is unreachable. An
 /// account created before the 2026-08-02 mainnet cutover therefore needs `--rpc` naming a testnet
 /// node. Saying so here because the sentence that used to stand in this place claimed the
 /// opposite.
-pub const DEFAULT_RPCS: [&str; 4] = [
+///
+/// ⭐ 2026-11-10 — two more mainnet operators after those two, the same ones the web app and the
+/// command-line tool added that day: 01NODE and PublicNode (Allnodes, its gRPC-web door). Each
+/// answered `ListOwnedObjects` over gRPC-web, so a recovery still finds its list when the first
+/// two are down.
+pub const DEFAULT_RPCS: [&str; 6] = [
     "https://rpc-mainnet.suiscan.xyz",
     "https://fullnode.mainnet.sui.io",
+    "https://sui.01.ro",
+    "https://sui-grpc-web.publicnode.com",
     "https://fullnode.testnet.sui.io",
     "https://rpc-testnet.suiscan.xyz",
 ];
+
+/// How many of [`DEFAULT_RPCS`] are mainnet hosts (they come first).
+#[cfg(test)]
+const MAINNET_DEFAULTS: usize = 4;
 
 /// How many pages of owned objects one address is walked for.
 ///
@@ -485,7 +496,7 @@ mod tests {
         const OWNER: &str = "0xc1bd6744bf571d8fc297652c2708db020eee72daeabd7fe63e3a90f3d123f4ab";
         const KNOWN: &str = "9jMB47B35cNzMX3VfxhtOOuL1eW6d_lRTmH-vYPsYvg";
         let agent = http_agent();
-        for host in &DEFAULT_RPCS[..2] {
+        for host in &DEFAULT_RPCS[..MAINNET_DEFAULTS] {
             let found = owned_blob_ids(&agent, &[host.to_string()], OWNER)
                 .unwrap_or_else(|why| panic!("{host}: {why}"));
             eprintln!(
