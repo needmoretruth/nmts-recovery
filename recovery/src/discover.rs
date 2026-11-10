@@ -374,10 +374,25 @@ fn fetch_patch(
     let mut any_answered = false;
     for endpoint in aggregators {
         let url = format!("{endpoint}{path}");
-        match agent.get(&url).call() {
+        // The answer is read, not raised: what a 404 or a 500 SAYS decides whether it is a problem.
+        let asked = agent
+            .get(&url)
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .call();
+        match asked {
             Ok(mut resp) => {
                 let status = resp.status().as_u16();
                 if status == 404 {
+                    any_answered = true;
+                    continue;
+                }
+                // ⛔ A BLOB THAT IS A FILE OF ITS OWN IS THE EXPECTED CASE, NOT A FAILURE. Most
+                //    accounts keep large files as plain blobs, and the aggregator answers a patch
+                //    question about one with a 500 that says the blob is not a quilt. Said as a
+                //    warning, it reads as "recovery failed" while the list was found next door.
+                if status == 500 && answers_not_a_quilt(&mut resp) {
                     any_answered = true;
                     continue;
                 }
@@ -405,6 +420,17 @@ fn fetch_patch(
         return Ok(None);
     }
     Err(format!("{quilt_id}: {}", failures.join("; ")))
+}
+
+/// Does this error answer say the blob asked about is not a quilt? Walrus's aggregator words it
+/// "Invalid quilt version byte" (measured on both public testnet aggregators, 2026-11-10); any
+/// other 500 stays a problem worth saying.
+fn answers_not_a_quilt(resp: &mut ureq::http::Response<ureq::Body>) -> bool {
+    resp.body_mut()
+        .with_config()
+        .limit(64 * 1024)
+        .read_to_string()
+        .is_ok_and(|body| body.contains("Invalid quilt version byte"))
 }
 
 /// Ceiling on one fetched list. The sealed file list's own practical ceiling is 8 MiB and a
@@ -521,5 +547,59 @@ mod tests {
         }
         .url_path();
         assert_eq!(path, "/v1/blobs/by-quilt-id/QUILT/a-b-c");
+    }
+
+    /// One aggregator on loopback that gives every request the same answer.
+    fn aggregator_answering(status: u16, body: &'static str) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let addr = listener.local_addr().expect("local address");
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { return };
+                let mut seen = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => seen.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let head = format!(
+                    "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(body.as_bytes());
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    // What both public testnet aggregators answered on 2026-11-10 when asked for a patch of a
+    // blob that is a file of its own (an NMTS file starts with `N`, byte 78), and of a quilt
+    // without that patch.
+    const NOT_A_QUILT: &str = r#"{"error":{"status":"INTERNAL","code":500,"message":"quilt error: other error: Invalid quilt version byte: 78","details":[{"@type":"ErrorInfo","reason":"INTERNAL_ERROR","domain":"daemon.walrus.space","metadata":{}}]}}"#;
+    const NO_SUCH_PATCH: &str = r#"{"error":{"status":"NOT_FOUND","code":404,"message":"the requested quilt patch does not exist on Walrus","details":[{"@type":"ErrorInfo","reason":"QUILT_PATCH_NOT_FOUND","domain":"daemon.walrus.space","metadata":{}}]}}"#;
+
+    #[test]
+    fn a_blob_that_is_not_a_quilt_is_skipped_without_a_problem() {
+        // ⛔ Most accounts keep large files as blobs of their own. Asking one of them for the list
+        //    is the expected case, and somebody recovering files reads a warning as a failure.
+        let agg = aggregator_answering(500, NOT_A_QUILT);
+        assert_eq!(fetch_patch(&http_agent(), &[agg], "Q", "name"), Ok(None));
+    }
+
+    #[test]
+    fn a_quilt_without_the_patch_is_skipped_without_a_problem() {
+        let agg = aggregator_answering(404, NO_SUCH_PATCH);
+        assert_eq!(fetch_patch(&http_agent(), &[agg], "Q", "name"), Ok(None));
+    }
+
+    #[test]
+    fn an_aggregator_that_fails_is_still_said() {
+        let agg = aggregator_answering(500, r#"{"error":{"code":500,"message":"failed to read enough slivers"}}"#);
+        let said = fetch_patch(&http_agent(), &[agg], "Q", "name").expect_err("a real failure went unsaid");
+        assert!(said.contains("answered 500"), "{said}");
     }
 }
